@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORBIT-1 Electronics Laboratory</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/ui.css">
+  <link rel="stylesheet" href="/lab.css">
+  <script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
+  <script type="module" src="/lab.js"></script>
+</head>
+<body>
+<header><a class="brand" href="/">ORBIT<span class="accent">—</span>1</a><a href="/">Mission Control</a><span class="lab">SIMULATION ONLY</span></header>
+<main class="bench">
+  <h1>Electronics laboratory</h1>
+  <p>Exercise virtual electronics through scripted ground, flight and orbital milestones. The 400 km reference orbit starts at the orbit acquisition cue.</p>
+  <p id="error" role="status"></p>
+  <section class="panel bench-controls">
+    <div><strong id="phase">Connecting</strong> <output id="clock"></output></div>
+    <div class="controls">
+      <button data-command="start">Run / resume</button><button data-command="pause">Pause</button>
+      <button data-command="step">Step 250 ms</button><button data-command="reset">Reset</button>
+      <label>Speed <select id="speed"><option value="1">1×</option><option value="4">4×</option><option value="16">16×</option></select></label>
+    </div>
+    <div class="controls">
+      <label>Fault <select id="fault"></select></label><button data-command="inject">Inject</button>
+      <button data-command="recover">Recover selected fault</button><span id="active"></span>
+    </div>
+    <div class="controls">
+      <button id="replay">Review recording</button><input type="range" id="seek" aria-label="Recorded frame" min="0" max="0" disabled>
+      <button id="live">Return to live</button><button id="export">Export recording</button>
+    </div>
+  </section>
+  <div class="bench-grid">
+    <section class="panel"><h2>Mission visualization</h2>
+      <p id="orbit-note">Orbital view becomes available at the orbit acquisition cue.</p>
+      <canvas id="earth" aria-label="Interactive orbital reference view"></canvas>
+    </section>
+    <section class="panel"><h2>Electronics architecture</h2>
+      <div class="supply">Battery → 5 V regulator → shared rail</div>
+      <div id="devices" class="devices" aria-label="Select a component"></div>
+      <pre id="device"></pre>
+      <h3>Flight computers and ground link</h3><p id="computer"></p><p id="firmware"></p>
+    </section>
+    <section class="panel"><h2>Power and waveform</h2><p id="power"></p>
+      <label>Trace <select id="trace"><option value="transient">RC transition · ms</option><option value="history">Rail and battery history · s</option></select></label>
+      <canvas id="wave" aria-label="Model voltage waveform"></canvas>
+      <p id="scale"></p><button id="csv">Export waveform CSV</button>
+    </section>
+    <section class="panel"><h2>Sensor readings</h2>
+      <p>Channels update at 4 Hz when their power and bus are available. A and B measure a unitless bench stimulus.</p>
+      <pre id="sensors"></pre><h3>Mission and fault history</h3><ol id="events"></ol>
+    </section>
+    <section class="panel wide"><h2>Bus analyzer</h2>
+      <label>Protocol <select id="bus"><option>All</option><option>SPI</option><option>CAN</option><option>I²C</option><option>UART</option></select></label>
+      <p>Transactions carry a float32 payload and a modeled CRC-16. Displayed transfer time uses the configured bit rate.</p>
+      <div class="table-wrap"><table><thead><tr><th>Sim s</th><th>Bus</th><th>Source</th><th>Destination</th><th>Payload (hex)</th><th>CRC</th><th>Wire ms</th><th>Result</th></tr></thead><tbody id="messages"></tbody></table></div>
+    </section>
+  </div>
+</main>
+</body>
+</html>

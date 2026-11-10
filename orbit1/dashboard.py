@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 from .orbit import MU, R_EARTH
 from .telemetry import parse_line
 from .engine import Orbit
+from .lab import ElectronicsLab
 from .verification import read_evidence
 from dataclasses import asdict
 import mimetypes
@@ -65,6 +66,7 @@ def run_existing_tests() -> dict:
 class Mission:
     def __init__(self, qemu_log: str | None = None, run_tests: bool = True):
         self.lock = threading.RLock()
+        self.lab = ElectronicsLab()
         self.orbit = Orbit()
         self.trajectory = self.orbit.trajectory()
         self.frames = deque(maxlen=3600)
@@ -139,6 +141,7 @@ class Mission:
 
     def _advance(self):
         now = time.monotonic()
+        self.lab.advance(now)
         dt = max(0, now-self.last_wall)
         self.last_wall = now
         if self.running:
@@ -337,6 +340,13 @@ def make_handler(mission):
 
         def do_GET(self):
             path = urlparse(self.path).path
+            if path in ('/api/lab', '/api/lab/recording'):
+                with mission.lock:
+                    mission._advance()
+                    result = mission.lab.snapshot(recording=path.endswith('/recording'))
+                    if path == '/api/lab':
+                        result['firmware'] = mission._qemu()
+                return self._respond(200, json.dumps(result, allow_nan=False).encode())
             if path == '/api/status':
                 return self._respond(200,json.dumps(mission.snapshot()).encode())
             if path == '/api/test-output':
@@ -360,7 +370,8 @@ def make_handler(mission):
             return self._respond(404,b'Not found','text/plain')
 
         def do_POST(self):
-            if urlparse(self.path).path != '/api/command':
+            path = urlparse(self.path).path
+            if path not in ('/api/command', '/api/lab'):
                 return self._respond(404,b'{"error":"Unknown endpoint"}')
             origin = self.headers.get('Origin')
             # Localhost only; additionally reject browser writes from other origins.
@@ -371,7 +382,15 @@ def make_handler(mission):
                 if not 0 < length <= 8192:
                     raise ValueError('Payload too large or empty')
                 data=json.loads(self.rfile.read(length))
-                result=mission.command(data)
+                if path == '/api/lab':
+                    if not isinstance(data, dict):
+                        raise ValueError('Expected a JSON object')
+                    with mission.lock:
+                        mission._advance()
+                        mission.lab.command(data.get('command'), data.get('value'))
+                    result = {'ok': True}
+                else:
+                    result = mission.command(data)
                 return self._respond(200,json.dumps(result).encode())
             except (ValueError, TypeError, json.JSONDecodeError) as e:
                 return self._respond(400,json.dumps({'error':str(e)}).encode())

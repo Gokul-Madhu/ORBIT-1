@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#060c15"><title>ORBIT-1 | Mission Control</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/ui.css"><script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script><script type="module" src="/main.js"></script></head>
 <body>
-<header><a class="brand" href="/" aria-label="ORBIT-1 home"><span class="brand-icon">◎</span> ORBIT<span class="accent">—</span>1 <small>MISSION CONTROL</small></a><nav aria-label="Workspace"><button class="nav active" data-tab="operations">Operations</button><button class="nav" data-tab="verification">Verification</button></nav><div class="top-status"><span id="backend-dot" class="dot"></span><span id="backend-status">CONNECTING</span><span class="lab">SIMULATION ONLY</span><time id="utc">--:--:-- UTC</time></div></header>
+<header><a class="brand" href="/" aria-label="ORBIT-1 home"><span class="brand-icon">◎</span> ORBIT<span class="accent">—</span>1 <small>MISSION CONTROL</small></a><nav aria-label="Workspace"><a class="nav" href="/lab.html">Electronics lab</a><button class="nav active" data-tab="operations">Operations</button><button class="nav" data-tab="verification">Verification</button></nav><div class="top-status"><span id="backend-dot" class="dot"></span><span id="backend-status">CONNECTING</span><span class="lab">SIMULATION ONLY</span><time id="utc">--:--:-- UTC</time></div></header>
 <main>
 <div id="connection-error" role="status" hidden>Backend connection lost. Values are frozen at the last received sample. Reconnecting automatically.</div>
 <div id="notice" role="status" hidden></div>

@@ -1,5 +1,10 @@
 # ORBIT-1 Mission Control 1.0
 
+The **Electronics lab** opens automatically when launched from Windows. It is also
+available at `http://localhost:8780/lab.html`, with a link back to orbital
+Mission Control. See [the electronics laboratory guide](docs/ELECTRONICS_LAB.md)
+for controls, models, and fidelity limits.
+
 A complete **local, simulation-only** orbital laboratory: Python Kepler mechanics, an interactive WebGL Earth, recorded mission replay, and synthetic Zephyr RTOS telemetry from QEMU. There are no physical measurements, vehicle commands, actuators, propulsion, launch sequences, or flight-control outputs.
 
 ## Start the application

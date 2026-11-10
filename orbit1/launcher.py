@@ -15,7 +15,8 @@ from .dashboard import ROOT, Mission, make_handler
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8780)
-    parser.add_argument('--no-qemu', action='store_true', help='Analytical model only; QEMU stays disconnected')
+    parser.add_argument('--no-qemu', action='store_true', help='Host simulation only; QEMU stays disconnected')
+    parser.add_argument('--open-browser', action='store_true', help='Open the workbench in Windows after startup')
     parser.add_argument('--skip-build', action='store_true', help='Use existing mission build')
     parser.add_argument('--build-dir', default='zephyr/build-mission', help='Isolated project-local Zephyr build directory')
     args = parser.parse_args()
@@ -80,6 +81,11 @@ def main():
             reader.start()
         mission.start()
         print(f'ORBIT-1 ready: http://localhost:{args.port}', flush=True)
+        if args.open_browser:
+            explorer = Path('/mnt/c/Windows/explorer.exe')
+            if explorer.is_file():
+                subprocess.Popen([str(explorer), f'http://localhost:{args.port}/lab.html'],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print('SIMULATION ONLY · Ctrl+C stops this server and its managed QEMU.', flush=True)
         while not stop.is_set():
             server.handle_request()
