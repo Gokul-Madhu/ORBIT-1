@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+zephyr/build/
+orbit.csv
+*.log
+.runtime/
+.tools/
+zephyr/build-*/
+test-results/

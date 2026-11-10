@@ -1,0 +1,2 @@
+# Optional graphical ground station; Python stdlib-only simulator and tests.
+pygame>=2.5,<3

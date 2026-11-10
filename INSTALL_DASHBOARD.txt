@@ -1,0 +1,14 @@
+ORBIT-1 Mission Control 1.0
+
+Start the complete application from Windows PowerShell:
+  .\start.ps1
+
+Open http://localhost:8780
+
+The launcher uses WSL Ubuntu-24.04, the existing Zephyr environment,
+Python tests, an isolated firmware build, and managed QEMU 8.2.2.
+Keep the terminal open. Ctrl+C or .\stop.ps1 saves the session and
+stops the application and its owned QEMU process.
+
+Backend, assets, charts and replay run locally. No hardware outputs.
+See README.md and docs/DELIVERY_REPORT.md for details and verification.
