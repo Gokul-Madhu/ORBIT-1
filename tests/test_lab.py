@@ -49,12 +49,15 @@ class ElectronicsLabTests(unittest.TestCase):
             'radio': lambda f: f['radio_dropped'] == 2,
             'thermal': lambda f: f['disagreement'],
             'payload': lambda f: f['payload'] == 'FAILED',
+            'gyro': lambda f: f['vectors']['gyro'] is None,
+            'gnss': lambda f: f['vectors']['gnss'] is None,
+            'temperature': lambda f: f['sensors']['temperature'] is None,
         }
         self.assertEqual(set(outcomes), set(FAULTS))
         for key, check in outcomes.items():
             with self.subTest(fault=key):
                 lab = ElectronicsLab()
-                if key == 'payload':
+                if key in ('payload', 'gnss'):
                     for _ in range(220):
                         lab.step()
                 lab.command('inject', key)
@@ -65,6 +68,23 @@ class ElectronicsLabTests(unittest.TestCase):
                 lab.step()
                 self.assertEqual(lab.frames[-1]['health'], 'NORMAL')
                 self.assertEqual(lab.frames[-1]['controller'], 'primary')
+
+    def test_sensor_fault_marks_only_source_and_preserves_receiver(self):
+        lab = ElectronicsLab()
+        lab.command('inject', 'imu')
+        lab.step()
+        frame = lab.frames[-1]
+        self.assertEqual(frame['devices']['sensor_a']['health'], 'FAILED')
+        self.assertEqual(frame['devices']['primary']['health'], 'HEALTHY')
+        self.assertEqual(frame['devices']['sensor_b']['health'], 'HEALTHY')
+        self.assertIsNone(frame['orientation_rad'])
+        attempts = [p for p in lab.transactions if p['t_s'] == frame['t_s'] and p['source'] == 'sensor_a']
+        self.assertEqual(len(attempts), 3)
+        self.assertTrue(all(p['result'] == 'timeout' and p['value'] is None for p in attempts))
+        lab.command('recover', 'imu')
+        lab.step()
+        self.assertEqual(lab.frames[-1]['devices']['sensor_a']['health'], 'HEALTHY')
+        self.assertIsNotNone(lab.frames[-1]['orientation_rad'])
 
     def test_clock_starts_pauses_steps_and_resets(self):
         lab = ElectronicsLab()

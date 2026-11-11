@@ -11,7 +11,9 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT/'.tools'/'python'))
+tools = ROOT/'.tools'
+versioned_tools = tools/f'python{sys.version_info.major}{sys.version_info.minor}'
+sys.path.insert(0, str(versioned_tools if versioned_tools.is_dir() else tools/'python'))
 sys.path.insert(0, str(ROOT))
 from playwright.sync_api import sync_playwright, expect
 from orbit1.verification import source_digest
@@ -150,10 +152,48 @@ def main():
         expect(fallback.locator('#backend-status')).to_have_text('ONLINE')
         passed('3D failure fallback', 'Blocked renderer module; explicit warning appeared and backend controls remained available')
         lab = context.new_page()
-        lab.on('pageerror', lambda error: errors.append(str(error)))
+        lab.on('pageerror', lambda error: errors.append(error.stack or str(error)))
         lab.goto(args.url+'/lab.html')
         expect(lab.locator('#phase')).to_contain_text('Ground power-on')
         expect(lab.locator('#firmware')).to_contain_text('LIVE')
+        expect(lab.locator('#graphics')).to_contain_text('WebGL')
+        rocket = lab.locator('#rocket')
+        lab_state = lab.request.get(args.url+'/api/lab').json()
+        packet_count = sum(row['t_s'] == lab_state['state']['t_s'] for row in lab_state['transactions'])
+        assert packet_count > 0
+        expect(rocket).to_have_attribute('data-packet-count', str(packet_count))
+        for button in lab.locator('#devices [data-component]').all():
+            name = button.get_attribute('data-component')
+            button.click()
+            expect(rocket).to_have_attribute('data-selected', name)
+        lab.locator('[data-component=sensor_a]').click()
+        expect(lab.locator('#component-name')).to_contain_text('Primary accelerometer')
+        expect(lab.locator('#device')).to_contain_text('Reading:')
+        lab.wait_for_timeout(650)
+        box = rocket.bounding_box()
+        rocket.click(position={'x': box['width']/2, 'y': box['height']/2})
+        expect(lab.locator('#component-name')).to_contain_text(' · ')
+        lab.locator('#fault').select_option('imu')
+        lab.locator('[data-command=inject]').click()
+        expect(lab.locator('#active')).to_contain_text('Primary sensor interruption')
+        lab.locator('[data-command=step]').click()
+        expect(rocket).to_have_attribute('data-failed', 'sensor_a')
+        expect(rocket).to_have_attribute('data-outline', 'ff294d')
+        expect(lab.locator('#device')).to_contain_text('No valid sample')
+        lab.locator('#twin-mode').select_option('network')
+        expect(rocket).to_have_attribute('data-fault-links', 'sensor_a sensor_a sensor_a')
+        expect(lab.locator('#messages')).to_contain_text('timeout')
+        lab.wait_for_timeout(500)
+        lab.screenshot(path=str(output/'rocket-fault-network.png'), full_page=True)
+        lab.locator('#fault-focus').click()
+        expect(lab.locator('#twin-mode')).to_have_value('pcb')
+        lab.locator('[data-command=recover]').click()
+        expect(lab.locator('#active')).to_have_text('')
+        lab.locator('[data-command=step]').click()
+        expect(rocket).to_have_attribute('data-outline', '48efb2')
+        expect(rocket).to_have_attribute('data-fault-links', '')
+        expect(lab.locator('#device')).not_to_contain_text('No valid sample')
+        passed('3D electronics fault and recovery', 'Selected all boards, ray-picked a package, matched sensor timeouts to red component and SPI paths, focused the failure and restored its live readings')
         lab.locator('#fault').select_option('regulator')
         lab.locator('[data-command=inject]').click()
         expect(lab.locator('#active')).to_contain_text('Regulator brownout')
@@ -175,7 +215,18 @@ def main():
         with lab.expect_download() as waveform:
             lab.locator('#csv').click()
         waveform.value.save_as(str(output/'lab-waveform.csv'))
+        lab.locator('#twin-mode').select_option('orbit')
+        expect(lab.locator('#earth')).to_be_visible()
         lab.screenshot(path=str(output/'electronics-lab.png'), full_page=True)
+        lab.locator('#twin-mode').select_option('vehicle')
+        lab.wait_for_timeout(700)
+        lab.screenshot(path=str(output/'rocket-cutaway.png'), full_page=True)
+        lab.set_viewport_size({'width': 390, 'height': 844})
+        lab.wait_for_timeout(500)
+        assert lab.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Lab mobile horizontal overflow'
+        assert lab.evaluate("""document.querySelector('.lab-nav').getBoundingClientRect().bottom
+            <= document.querySelector('#fault-center').getBoundingClientRect().top"""), 'Lab mobile navigation overlaps controls'
+        lab.screenshot(path=str(output/'rocket-mobile.png'), full_page=True)
         assert not errors, errors
         passed('Electronics laboratory mission', 'Verified browser brownout and recovery, live firmware provenance, scripted completion, bus filtering, replay and CSV export')
         context.close();browser.close()

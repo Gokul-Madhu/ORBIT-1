@@ -91,6 +91,7 @@ $('speed').onchange=e=>command('speed',Number(e.target.value));
 $('orbit-form').onsubmit=e=>{e.preventDefault();command('configure',Object.fromEntries([...new FormData(e.target)].map(([k,v])=>[k,Number(v)])))};
 $('metric').onchange=drawCharts;$('test-btn').onclick=$('verify-tests').onclick=()=>command('test');$('test-output-btn').onclick=testOutput;
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('verification-link').onclick=e=>{e.preventDefault();tab('verification')};
+if (location.hash === '#verification') tab('verification');
 $('replay-btn').onclick=async()=>{try{const r=await fetch('/api/session');if(!r.ok)throw Error('Unable to fetch recording');enterReplay(await r.json())}catch(e){notice(e.message)}};
 $('replay-slider').oninput=e=>{playing=false;set('replay-play','▶ Play');setReplayFrame(Number(e.target.value))};
 $('replay-play').onclick=()=>{if(!replay)return;if(index===replay.frames.length-1)setReplayFrame(0);playing=!playing;playAt={index,wall:performance.now()};set('replay-play',playing?'Ⅱ Pause':'▶ Play')};$('live-btn').onclick=goLive;

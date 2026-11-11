@@ -13,10 +13,15 @@
 <body>
 <header><a class="brand" href="/">ORBIT<span class="accent">—</span>1</a><a href="/">Mission Control</a><span class="lab">SIMULATION ONLY</span></header>
 <main class="bench">
-  <h1>Electronics laboratory</h1>
-  <p>Exercise virtual electronics through scripted ground, flight and orbital milestones. The 400 km reference orbit starts at the orbit acquisition cue.</p>
+  <div class="twin-title"><h1>Rocket electronics digital twin</h1><output id="graphics" aria-live="off">Starting WebGL</output></div>
+  <p>Scripted electronics test mission with an independent 400 km orbital reference. Vehicle geometry and pre-orbit motion are illustrative.</p>
+  <nav class="lab-nav" aria-label="Laboratory views">
+    <a href="#visual">Mission and rocket</a><a href="#components">Sensor lab</a>
+    <a href="#network">Bus network</a><a href="#power-lab">Power and scope</a>
+    <a href="#fault-center">Faults and replay</a><a href="/#verification">Engineering status</a>
+  </nav>
   <p id="error" role="status"></p>
-  <section class="panel bench-controls">
+  <section class="panel bench-controls" id="fault-center">
     <div><strong id="phase">Connecting</strong> <output id="clock"></output></div>
     <div class="controls">
       <button data-command="start">Run / resume</button><button data-command="pause">Pause</button>
@@ -26,36 +31,57 @@
     <div class="controls">
       <label>Fault <select id="fault"></select></label><button data-command="inject">Inject</button>
       <button data-command="recover">Recover selected fault</button><span id="active"></span>
+      <button id="fault-focus" disabled>Fault focus</button>
     </div>
     <div class="controls">
       <button id="replay">Review recording</button><input type="range" id="seek" aria-label="Recorded frame" min="0" max="0" disabled>
       <button id="live">Return to live</button><button id="export">Export recording</button>
+      <button id="playback" disabled>Play recording</button>
+      <label>Replay rate <select id="replay-rate"><option value="1">1×</option><option value="4">4×</option><option value="16">16×</option></select></label>
     </div>
   </section>
   <div class="bench-grid">
-    <section class="panel"><h2>Mission visualization</h2>
+    <section class="panel twin-panel" id="visual"><h2>3D vehicle and mission</h2>
+      <div class="controls view-controls">
+        <label>View <select id="twin-mode"><option value="vehicle">Rocket cutaway</option><option value="mission">Ground / flight reference</option><option value="avionics">Avionics bay</option><option value="pcb">Selected PCB</option><option value="network">Bus network</option><option value="orbit">Earth and orbit</option></select></label>
+        <button id="camera-reset">Reset camera</button><button id="fullscreen">Full screen</button>
+        <label>Graphics <select id="quality"><option value="auto">Adaptive</option><option value="low">Low</option></select></label>
+      </div>
+      <div class="controls view-controls">
+        <label><input id="shell" type="checkbox" checked> Shell</label>
+        <label>Opacity <input id="opacity" type="range" min="0" max="100" value="34"></label>
+        <label>Explode <input id="explode" type="range" min="0" max="100" value="0"></label>
+      </div>
+      <canvas id="rocket" aria-label="Interactive 3D rocket. Select a board to inspect it."></canvas>
+      <p class="bus-legend"><span>SPI</span><span>CAN</span><span>I²C</span><span>UART</span><span>Fault</span></p>
       <p id="orbit-note">Orbital view becomes available at the orbit acquisition cue.</p>
-      <canvas id="earth" aria-label="Interactive orbital reference view"></canvas>
+      <canvas id="earth" aria-label="Interactive orbital reference view" hidden></canvas>
     </section>
-    <section class="panel"><h2>Electronics architecture</h2>
+    <section class="panel" id="components"><h2>Component inspector</h2>
       <div class="supply">Battery → 5 V regulator → shared rail</div>
       <div id="devices" class="devices" aria-label="Select a component"></div>
+      <h3 id="component-name">Select an electronic module</h3>
       <pre id="device"></pre>
+      <p id="sensor-spec"></p><canvas id="sensor-plot" aria-label="Selected sensor history"></canvas>
       <h3>Flight computers and ground link</h3><p id="computer"></p><p id="firmware"></p>
     </section>
-    <section class="panel"><h2>Power and waveform</h2><p id="power"></p>
+    <section class="panel" id="power-lab"><h2>Power and oscilloscope</h2><p id="power"></p>
       <label>Trace <select id="trace"><option value="transient">RC transition · ms</option><option value="history">Rail and battery history · s</option></select></label>
+      <label>Scale <select id="volts"><option>10</option><option>5</option><option>15</option></select> V</label>
+      <label>Window <select id="timebase"><option value="1">Full</option><option value=".5">Half</option><option value=".25">Quarter</option></select></label>
+      <button id="freeze-wave" aria-pressed="false">Hold waveform</button>
       <canvas id="wave" aria-label="Model voltage waveform"></canvas>
-      <p id="scale"></p><button id="csv">Export waveform CSV</button>
+      <p id="scale"></p><output id="cursor">Click the trace to read a sample</output><button id="csv">Export waveform CSV</button>
     </section>
     <section class="panel"><h2>Sensor readings</h2>
-      <p>Channels update at 4 Hz when their power and bus are available. A and B measure a unitless bench stimulus.</p>
+      <p>Channels update at 4 Hz when their power and bus are available.</p>
       <pre id="sensors"></pre><h3>Mission and fault history</h3><ol id="events"></ol>
     </section>
-    <section class="panel wide"><h2>Bus analyzer</h2>
+    <section class="panel wide" id="network"><h2>Bus analyzer</h2>
       <label>Protocol <select id="bus"><option>All</option><option>SPI</option><option>CAN</option><option>I²C</option><option>UART</option></select></label>
       <p>Transactions carry a float32 payload and a modeled CRC-16. Displayed transfer time uses the configured bit rate.</p>
-      <div class="table-wrap"><table><thead><tr><th>Sim s</th><th>Bus</th><th>Source</th><th>Destination</th><th>Payload (hex)</th><th>CRC</th><th>Wire ms</th><th>Result</th></tr></thead><tbody id="messages"></tbody></table></div>
+      <p id="bus-utilization"></p><button id="hold-packets" aria-pressed="false">Hold packet list</button>
+      <div class="table-wrap"><table><thead><tr><th>Sim s</th><th>Bus</th><th>Source</th><th>Destination</th><th>Channel</th><th>Payload (hex)</th><th>CRC</th><th>Decoded value</th><th>Wire ms</th><th>Rate bps</th><th>Result</th></tr></thead><tbody id="messages"></tbody></table></div>
     </section>
   </div>
 </main>

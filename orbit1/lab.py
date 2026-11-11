@@ -1,6 +1,6 @@
 """Deterministic electronics bench driven by scripted demonstration milestones."""
 from collections import deque
-from math import exp, sin
+from math import cos, exp, sin
 import random
 import struct
 import time
@@ -25,6 +25,8 @@ FAULTS = {
     'watchdog': 'Primary heartbeat loss', 'backup': 'Backup unavailable',
     'radio': 'Ground link outage', 'thermal': 'Thermal drift',
     'payload': 'Payload initialization fault',
+    'gyro': 'Gyroscope sample timeout', 'gnss': 'GNSS reference unavailable',
+    'temperature': 'Temperature sensor open circuit',
 }
 DEVICES = {
     'primary': ('SPI', 0.20), 'backup': ('CAN', 0.12),
@@ -32,8 +34,18 @@ DEVICES = {
     'temperature': ('I²C', 0.015), 'radio': ('UART', 0.15),
     'payload': ('I²C', 0.25), 'pressure': ('SPI', 0.025),
     'checkout_load': ('—', 0.08),
+    'gyro': ('SPI', 0.020), 'gnss': ('CAN', 0.035),
 }
 BIT_RATES = {'SPI': 1_000_000, 'CAN': 250_000, 'I²C': 100_000, 'UART': 115_200}
+SENSOR_SPECS = {
+    'sensor_a': ('Primary accelerometer / IMU', 'm/s²', '±16 per axis', 'Seeded noise σ = 0.004 on X; thermal bias scenario'),
+    'sensor_b': ('Redundant accelerometer', 'm/s²', '±16 per axis', 'Ideal backup bench channel; disagreement scenario offsets X'),
+    'gyro': ('Angular-rate sensor', 'rad/s', '±2 per axis', 'Rates of the scripted orientation reference'),
+    'gnss': ('GNSS reference receiver', 'km', '400 km orbital reference', 'Ideal orbital state; receiver geometry and uncertainty are unmodeled'),
+    'temperature': ('Board temperature sensor', '°C', '−40 to 125 display range', 'Lumped regulator losses and ambient cooling'),
+    'pressure': ('Pressure transducer', 'kPa', '0.2–101.3', 'Scripted chamber profile independent of physical altitude'),
+    'monitor': ('Power monitor', 'V / A', '0–9 V / 0–2 A display range', 'Direct model taps for battery, rail, and supply current'),
+}
 
 
 class ElectronicsLab:
@@ -56,7 +68,7 @@ class ElectronicsLab:
         self.faults = set()
         self.frames = deque(maxlen=361)
         self.events = deque(maxlen=150)
-        self.transactions = deque(maxlen=2048)
+        self.transactions = deque(maxlen=8192)
         self.waveform = []
         self.rng = random.Random(42)
         self.orbit = Orbit()
@@ -78,7 +90,7 @@ class ElectronicsLab:
     def event(self, message):
         self.events.append({'t_s': self.tick / 4, 'message': message})
 
-    def exchange(self, protocol, sender, receiver, value, fault=None):
+    def exchange(self, protocol, sender, receiver, value, fault=None, field=None):
         payload = struct.pack('<f', value)
         checksum = crc_hqx(payload, 0xffff)
         wire = payload
@@ -90,6 +102,8 @@ class ElectronicsLab:
             't_s': self.tick / 4, 'bus': protocol, 'source': sender,
             'destination': receiver, 'hex': wire.hex(' '), 'crc16': f'{checksum:04x}',
             'wire_ms': 1000 * bits / BIT_RATES[protocol], 'result': fault or 'ok',
+            'rate_bps': BIT_RATES[protocol], 'field': field,
+            'value': struct.unpack('<f', wire)[0] if not fault else None,
         })
         return None if fault else value
 
@@ -104,7 +118,8 @@ class ElectronicsLab:
             self.event(phase)
             self.previous_phase = phase
         fault = self.faults
-        enabled = {name for name in DEVICES if name != 'payload' or t >= 55}
+        enabled = {name for name in DEVICES if (name != 'payload' or t >= 55)
+                   and (name != 'gnss' or t >= 50)}
         if t >= 35:
             enabled.remove('checkout_load')
         current = sum(DEVICES[name][1] for name in enabled)
@@ -137,6 +152,11 @@ class ElectronicsLab:
         chamber_kpa = 101.3 if t < 20 else max(0.2, 101.3 * exp(-(t - 20) / 7))
         drift = 0.15 + (self.temperature - 22) * 0.02 if 'thermal' in fault else 0
         channels = {}
+        vectors = {}
+        orbital = self.orbit.sample(t - 50) if t >= 50 else None
+        moving = 20 <= t < 50
+        orientation = [0.12 * sin(t * 2), 0.08 * sin(t), 0.04 * sin(t * .5)] if moving else [0, 0, 0]
+        rates = [0.24 * cos(t * 2), 0.08 * cos(t), 0.02 * cos(t * .5)] if moving else [0, 0, 0]
         if powered and controller != 'none':
             a = round(stimulus + drift + self.rng.gauss(0, 0.004), 3)
             b = round(stimulus + (0.5 if 'disagreement' in fault else 0), 3)
@@ -145,9 +165,29 @@ class ElectronicsLab:
             channels['sensor_b'] = self.exchange('CAN', 'sensor_b', controller, b,
                 'link unavailable' if 'can' in fault else None)
             channels['temperature'] = self.exchange('I²C', 'temperature', controller,
-                round(self.temperature, 2), 'timeout' if 'i2c' in fault else None)
+                round(self.temperature, 2), 'timeout' if 'i2c' in fault or 'temperature' in fault else None)
             channels['pressure'] = self.exchange('SPI', 'pressure', controller,
                 round(chamber_kpa, 2), 'integrity error' if 'spi' in fault else None)
+            for name, bus, issue in (
+                ('sensor_a', 'SPI', 'timeout' if 'imu' in fault else 'integrity error' if 'spi' in fault else None),
+                ('sensor_b', 'CAN', 'link unavailable' if 'can' in fault else None),
+            ):
+                # X uses the existing sample; Y and Z have independent test excitation.
+                other_axes = (0.25 * sin(t), 0.1 * cos(t * 2)) if moving else (0, 0)
+                tail = [self.exchange(bus, name, controller, value, issue, axis)
+                        for axis, value in zip(('Y', 'Z'), other_axes)]
+                vectors[name] = [channels[name], *tail] if not issue else None
+            gyro_issue = 'timeout' if 'gyro' in fault else 'integrity error' if 'spi' in fault else None
+            vectors['gyro'] = [self.exchange('SPI', 'gyro', controller, value, gyro_issue, axis)
+                               for axis, value in zip('XYZ', rates)]
+            if gyro_issue:
+                vectors['gyro'] = None
+            if orbital:
+                gnss_issue = 'link unavailable' if 'gnss' in fault or 'can' in fault else None
+                vectors['gnss'] = [self.exchange('CAN', 'gnss', controller, value, gnss_issue, axis)
+                                   for axis, value in zip('XYZ', orbital['position_eci_km'])]
+                if gnss_issue:
+                    vectors['gnss'] = None
         disagreement = all(channels.get(k) is not None for k in ('sensor_a', 'sensor_b')) and abs(
             channels['sensor_a'] - channels['sensor_b']) > 0.1
         payload = 'OFF'
@@ -172,6 +212,38 @@ class ElectronicsLab:
                          for ms in range(21)]
         devices = {name: {'bus': bus, 'load_a': load, 'powered': powered and name in enabled}
                    for name, (bus, load) in DEVICES.items()}
+        devices.update({
+            'battery': {'bus': 'DC supply', 'load_a': None, 'powered': True},
+            'regulator': {'bus': 'DC supply', 'load_a': None, 'powered': True},
+            'monitor': {'bus': 'Model taps', 'load_a': None, 'powered': True},
+        })
+        failed = set(enabled) if not powered else set()
+        for row in reversed(self.transactions):
+            if row['t_s'] != t:
+                break
+            if row['result'] != 'ok':
+                failed.add(row['destination'] if row['bus'] == 'UART' else row['source'])
+        for name, condition in (
+            ('battery', 'battery' in fault), ('regulator', not powered),
+            ('primary', watchdog), ('backup', 'backup' in fault),
+            ('radio', 'radio' in fault), ('payload', payload == 'FAILED'),
+        ):
+            if condition:
+                failed.add(name)
+        for name, component in devices.items():
+            if name in failed:
+                component['health'] = 'FAILED'
+            elif not component['powered']:
+                component['health'] = 'OFF'
+            elif name in ('sensor_a', 'sensor_b') and disagreement:
+                component['health'] = 'WARNING'
+            else:
+                component['health'] = 'HEALTHY'
+        previous_devices = self.frames[-1]['devices'] if self.frames else devices
+        for name, component in devices.items():
+            old, new = previous_devices[name]['health'], component['health']
+            if old != new and ('FAILED' in (old, new) or 'WARNING' in (old, new)):
+                self.event(f'{name}: {old} → {new}')
         self.frames.append({
             't_s': t, 'phase': phase, 'battery_v': terminal, 'rail_v': rail,
             'battery_a': battery_current, 'load_w': rail * current,
@@ -182,7 +254,9 @@ class ElectronicsLab:
             'disagreement': disagreement, 'devices': devices,
             'radio_received': self.received, 'radio_dropped': self.dropped,
             'faults': sorted(fault), 'waveform': self.waveform,
-            'orbital_reference': self.orbit.sample(t - 50) if t >= 50 else None,
+            'orbital_reference': orbital, 'vectors': vectors,
+            'orientation_rad': orientation if vectors.get('sensor_a') is not None else None,
+            'mission_display': min(1, max(0, (t - 20) / 30)),
         })
 
     def command(self, command, value):
@@ -212,9 +286,10 @@ class ElectronicsLab:
             'state': self.frames[-1], 'running': self.running, 'speed': self.speed,
             'available_faults': FAULTS, 'active_faults': sorted(self.faults),
             'trajectory': self.trajectory,
+            'sensor_specs': SENSOR_SPECS,
             'transactions': list(self.transactions) if recording else list(self.transactions)[-32:],
             'events': list(self.events)[-(150 if recording else 20):],
             'frames': list(self.frames) if recording else [
-                {k: f[k] for k in ('t_s', 'rail_v', 'battery_v', 'battery_a', 'load_w')}
+                {k: f[k] for k in ('t_s', 'rail_v', 'battery_v', 'battery_a', 'load_w', 'sensors', 'vectors')}
                 for f in self.frames],
         }
