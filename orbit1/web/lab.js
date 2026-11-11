@@ -289,6 +289,7 @@ byId('speed').onchange = () => command('speed', Number(byId('speed').value));
 for (const id of ['bus', 'trace', 'seek']) byId(id).oninput = render;
 for (const id of ['timebase', 'volts']) byId(id).onchange = render;
 for (const id of ['opacity', 'explode', 'shell', 'quality']) byId(id).oninput = configureTwin;
+byId('labels').onchange = event => twin?.showLabels(event.target.checked);
 byId('twin-mode').onchange = event => { setMode(event.target.value); render(); };
 byId('camera-reset').onclick = () => {
   setMode(byId('twin-mode').value);

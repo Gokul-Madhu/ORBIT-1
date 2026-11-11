@@ -1,4 +1,15 @@
 .bench { max-width: 1500px; }
+.bench .twin-title h1 { color: #ecf8ff; letter-spacing: -.04em; font-size: clamp(1.7rem, 4vw, 2.7rem); }
+.bench .twin-panel, .bench #components {
+  background: linear-gradient(155deg, #10253b 0%, #0a1526 35%, #080f1b 100%);
+  border-top: 2px solid #3bb3df;
+}
+.bench .flight-guide { background: #0c2034; border-left: 3px solid #54d8ee; margin: 1rem 0; }
+.flight-guide summary { cursor: pointer; color: #83e8ff; font-weight: 700; }
+.flight-guide ol { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .6rem 1.6rem; padding-left: 1.5rem; margin-bottom: 0; }
+.flight-guide li { line-height: 1.5; }
+.harness-note { color: #aec4d9; font-size: .82rem; }
+.bus-legend span:nth-child(6) { color: #ffdf82; }
 .bench h1 { margin-top: 1rem; }
 .bench p { line-height: 1.55; }
 .bench-controls { display: grid; gap: .8rem; margin: 1rem 0; }

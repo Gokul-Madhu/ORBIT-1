@@ -16,6 +16,40 @@ const chip = new THREE.MeshStandardMaterial({color: 0x17202d, metalness: .42, ro
 const copper = new THREE.MeshStandardMaterial({color: 0xc6a065, metalness: .72, roughness: .34});
 const aluminum = new THREE.MeshStandardMaterial({color: 0x718daa, metalness: .66, roughness: .34});
 const boardGeometry = new THREE.BoxGeometry(.58, .40, .038);
+const MODULE_TAGS = {
+  primary: 'FC / A', backup: 'FC / B', sensor_a: 'IMU / A', sensor_b: 'ACC / B',
+  gyro: 'GYRO', pressure: 'PRESS', temperature: 'TEMP', gnss: 'GNSS',
+  regulator: 'REG', monitor: 'V / I', radio: 'RADIO', payload: 'PAYLOAD',
+  battery: 'BATTERY', checkout_load: 'LOAD',
+};
+const ceramic = new THREE.MeshStandardMaterial({color: 0xe2d6b6, roughness: .68});
+const blueBoard = new THREE.MeshStandardMaterial({color: 0x124b82, roughness: .53});
+
+function moduleLabel(group, name) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 80;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#081a2b';
+  ctx.fillRect(4, 5, 248, 70);
+  ctx.strokeStyle = '#39b9eb';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(4, 5, 248, 70);
+  ctx.fillStyle = '#e0f4ff';
+  ctx.font = '600 34px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(MODULE_TAGS[name], 128, 42);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({map: texture, transparent: true,
+    depthTest: false, toneMapped: false}));
+  label.position.set(0, .29, .11);
+  label.scale.set(.49, .153, 1);
+  label.renderOrder = 8;
+  group.add(label);
+  return label;
+}
 
 function mesh(parent, geometry, material, x, y, z) {
   const object = new THREE.Mesh(geometry, material);
@@ -38,6 +72,68 @@ function trace(parent, coordinates, color) {
 
 function pcb(name) {
   const group = new THREE.Group();
+  if (['sensor_a', 'sensor_b', 'gyro', 'pressure', 'temperature', 'gnss', 'monitor', 'regulator'].includes(name)) {
+    instrument(group, name);
+  } else {
+    controllerBoard(group, name);
+  }
+  const indicator = new THREE.MeshBasicMaterial({color: HEALTH.OFF});
+  mesh(group, new THREE.SphereGeometry(.022, 10, 8), indicator, .24, .105, .078);
+  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(.62, .44, .24)),
+    new THREE.LineBasicMaterial({color: HEALTH.OFF, transparent: true, toneMapped: false}));
+  outline.position.z = .07;
+  group.add(outline);
+  group.userData = {component: name, indicator, outline, label: moduleLabel(group, name)};
+  return group;
+}
+
+function instrument(group, name) {
+  const base = name === 'temperature' ? [.27, .31, .035]
+    : name === 'sensor_b' ? [.31, .31, .035] : [.47, .35, .035];
+  box(group, base, ['gnss', 'gyro'].includes(name) ? blueBoard : plate, 0, 0, 0).name = 'Module carrier';
+  box(group, [.15, .045, .05], aluminum, 0, -.14, .045).name = 'Harness connector';
+  if (name === 'pressure') {
+    const port = mesh(group, new THREE.CylinderGeometry(.096, .096, .085, 28), aluminum, 0, .035, .063);
+    port.rotation.x = Math.PI / 2;
+    port.name = 'Pressure port housing';
+    mesh(group, new THREE.TorusGeometry(.047, .013, 8, 24), copper, 0, .035, .112).name = 'Pressure inlet';
+    mesh(group, new THREE.CircleGeometry(.035, 18), chip, 0, .035, .113).name = 'Pressure inlet aperture';
+  } else if (name === 'temperature') {
+    const probe = mesh(group, new THREE.CapsuleGeometry(.033, .18, 5, 12), aluminum, 0, .045, .068);
+    probe.rotation.z = -.30;
+    probe.name = 'Temperature probe';
+    trace(group, [[-.07, -.13, .06], [-.07, -.07, .06], [-.03, -.04, .06]], 0xfab561);
+  } else if (name === 'gnss') {
+    box(group, [.23, .20, .065], ceramic, -.055, .04, .057).name = 'Ceramic patch antenna';
+    box(group, [.13, .115, .01], copper, -.055, .04, .096).name = 'Patch metallization';
+    box(group, [.073, .105, .034], chip, .137, -.015, .049).name = 'Receiver package';
+  } else if (name === 'regulator') {
+    box(group, [.15, .13, .07], chip, -.095, .038, .064).name = 'Regulator package';
+    for (let i = -2; i <= 2; i++) {
+      box(group, [.018, .14, .061], aluminum, -.095 + i * .035, .043, .112).name = 'Heat sink fin';
+    }
+    mesh(group, new THREE.TorusGeometry(.057, .022, 10, 20), copper, .125, .03, .065).name = 'Inductor';
+  } else if (name === 'monitor') {
+    box(group, [.27, .049, .039], copper, 0, .065, .056).name = 'Current shunt';
+    for (const x of [-.15, .15]) box(group, [.048, .105, .043], aluminum, x, .06, .054).name = 'Sense terminal';
+    box(group, [.095, .066, .033], chip, 0, -.036, .049).name = 'Voltage sense interface';
+  } else {
+    const sizes = {sensor_a: [.19, .15, .058], sensor_b: [.13, .13, .038], gyro: [.14, .17, .058]};
+    const packageMesh = box(group, sizes[name], name === 'gyro' ? ceramic : chip, 0, .02, .052);
+    packageMesh.name = name === 'gyro' ? 'Angular-rate MEMS' : 'Accelerometer MEMS';
+    if (name === 'sensor_a') {
+      box(group, [.11, .087, .012], aluminum, 0, .02, .087).name = 'MEMS package lid';
+      trace(group, [[.11, -.035, .046], [.17, -.035, .046], [.17, .04, .046]], 0x55edcb);
+    }
+    for (const sign of [-1, 1]) {
+      for (let pin = -1; pin <= 1; pin++) {
+        box(group, [.042, .014, .012], copper, sign * (sizes[name][0] / 2 + .013), .02 + pin * .037, .036);
+      }
+    }
+  }
+}
+
+function controllerBoard(group, name) {
   const substrate = mesh(group, boardGeometry, plate, 0, 0, 0);
   substrate.name = 'PCB substrate';
   const processor = box(group, [.18, .15, .045], chip, -.02, .025, .044);
@@ -75,23 +171,15 @@ function pcb(name) {
   if (name === 'pressure') {
     mesh(group, new THREE.TorusGeometry(.05, .009, 10, 24), aluminum, -.02, .025, .076);
   }
-  const indicator = new THREE.MeshBasicMaterial({color: HEALTH.OFF});
-  mesh(group, new THREE.SphereGeometry(.028, 10, 8), indicator, .24, .105, .078);
-  const outline = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(.62, .44, .17)),
-    new THREE.LineBasicMaterial({color: HEALTH.OFF, transparent: true, toneMapped: false}));
-  outline.position.z = .055;
-  group.add(outline);
-  group.userData = {component: name, indicator, outline};
-  return group;
 }
 
 function shell(parent, material, cutaway) {
-  const start = cutaway ? Math.PI * .48 : 0;
-  const span = cutaway ? Math.PI * 1.28 : Math.PI * 2;
-  for (const [y, length, radius] of [[-2, 2.15, .99], [.15, 2.05, .98], [2.13, 1.75, .93]]) {
-    mesh(parent, new THREE.CylinderGeometry(radius, radius, length, 64, 1, true, start, span), material, 0, y, 0);
-  }
-  mesh(parent, new THREE.CylinderGeometry(.05, .93, 1.18, 64, 1, true, start, span), material, 0, 3.57, 0);
+  const start = cutaway ? Math.PI * .43 : 0;
+  const span = cutaway ? Math.PI * 1.15 : Math.PI * 2;
+  const profile = [[.74, -3.08], [.94, -2.76], [.99, -2.48], [.99, 2.57],
+    [.96, 2.95], [.85, 3.30], [.66, 3.64], [.40, 3.94], [.16, 4.13], [0, 4.20]];
+  const hull = new THREE.LatheGeometry(profile.map(point => new THREE.Vector2(...point)), 56, start, span);
+  mesh(parent, hull, material, 0, 0, 0);
 }
 
 export class RocketTwin {
@@ -139,6 +227,14 @@ export class RocketTwin {
     }
     for (const x of [-.75, .75]) {
       box(this.structure, [.045, 5.9, .045], aluminum, x, -.08, -.49);
+    }
+    const spine = new THREE.MeshStandardMaterial({color: 0x183649, metalness: .55, roughness: .43});
+    box(this.structure, [1.40, 5.75, .06], spine, 0, -.05, -.63);
+    for (const y of [-2.96, -2.22, -1.38, -.59, .15, .9, 1.69, 2.36]) {
+      box(this.structure, [1.72, .045, .93], aluminum, 0, y, -.19);
+    }
+    for (const x of [-.88, .88]) {
+      box(this.structure, [.065, 5.83, .061], spine, x, -.06, -.42);
     }
     this.modules = new Map();
     for (const [name, coordinates] of Object.entries(LAYOUT)) {
@@ -249,10 +345,14 @@ export class RocketTwin {
     this.resize();
   }
 
+  showLabels(visible) {
+    for (const board of this.modules.values()) board.userData.label.visible = visible;
+  }
+
   link(row) {
     const key = [row.bus, row.source, row.destination].join('/');
     if (this.links.has(key)) return this.links.get(key);
-    const line = trace(this.cables, [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], BUS[row.bus]);
+    const line = trace(this.cables, Array.from({length: 6}, () => [0, 0, 0]), BUS[row.bus]);
     line.frustumCulled = false;
     const link = {line, row, points: []};
     this.links.set(key, link);
@@ -321,9 +421,14 @@ export class RocketTwin {
       if (!link.line.visible) continue;
       const from = this.modules.get(link.row.source).position;
       const to = this.modules.get(link.row.destination).position;
-      const depth = -.48 - Object.keys(BUS).indexOf(link.row.bus) * .11;
-      link.points = [from, new THREE.Vector3(from.x, from.y, depth),
-        new THREE.Vector3(to.x, to.y, depth), to];
+      const lane = Object.keys(BUS).indexOf(link.row.bus);
+      const depth = -.35 - lane * .045;
+      const trunk = .82 + lane * .055 + this.exploded * .55;
+      const sourcePort = from.clone().add(new THREE.Vector3(0, -.15, .06));
+      const destinationPort = to.clone().add(new THREE.Vector3(0, -.15, .06));
+      link.points = [sourcePort, new THREE.Vector3(sourcePort.x, sourcePort.y, depth),
+        new THREE.Vector3(trunk, sourcePort.y, depth), new THREE.Vector3(trunk, destinationPort.y, depth),
+        new THREE.Vector3(destinationPort.x, destinationPort.y, depth), destinationPort];
       const positions = link.line.geometry.attributes.position;
       link.points.forEach((point, index) => positions.setXYZ(index, point.x, point.y, point.z));
       positions.needsUpdate = true;
@@ -333,15 +438,15 @@ export class RocketTwin {
       const progress = THREE.MathUtils.clamp((now - started) / 380, 0, 1);
       dot.visible = progress < 1 && link.points.length > 0;
       if (!dot.visible) continue;
-      const distance = progress * (row.result === 'ok' ? 3 : 2);
-      const segment = Math.min(2, Math.floor(distance));
+      const distance = progress * (row.result === 'ok' ? 5 : 3);
+      const segment = Math.min(4, Math.floor(distance));
       dot.position.copy(link.points[segment]).lerp(link.points[segment + 1], distance - segment);
     }
     for (const {line, source, name} of this.supplyLinks) {
       const status = frame?.devices[name]?.health;
       line.visible = status !== 'OFF';
       const brownout = frame?.rail_v < 4.7;
-      line.material.color.setHex(brownout ? HEALTH.FAILED : BUS.DC);
+      line.material.color.setHex(brownout && name !== 'regulator' ? HEALTH.FAILED : BUS.DC);
       const from = this.modules.get(source).position;
       const to = this.modules.get(name).position;
       const positions = line.geometry.attributes.position;

@@ -15,6 +15,15 @@
 <main class="bench">
   <div class="twin-title"><h1>Rocket electronics digital twin</h1><output id="graphics" aria-live="off">Starting WebGL</output></div>
   <p>Scripted electronics test mission with an independent 400 km orbital reference. Vehicle geometry and pre-orbit motion are illustrative.</p>
+  <details class="flight-guide panel" open>
+    <summary>Quick start</summary>
+    <ol>
+      <li><strong>Explore.</strong> Drag to orbit, scroll or pinch to zoom. Select a labeled module in the cutaway or use the component buttons. Toggle the shell or move Explode to expose the racks.</li>
+      <li><strong>Run.</strong> Press Run / resume to advance the mission. Pause and use Step 250 ms to inspect one sensor sample and its packets.</li>
+      <li><strong>Try a fault.</strong> Choose Primary sensor interruption, press Inject, then step while paused. Fault focus opens the red IMU. Use Bus network to trace the failed SPI route. Recover selected fault and step again.</li>
+      <li><strong>Review.</strong> Review recording opens a timeline you can scrub or play. Return to live restores the mission controls.</li>
+    </ol>
+  </details>
   <nav class="lab-nav" aria-label="Laboratory views">
     <a href="#visual">Mission and rocket</a><a href="#components">Sensor lab</a>
     <a href="#network">Bus network</a><a href="#power-lab">Power and scope</a>
@@ -49,11 +58,13 @@
       </div>
       <div class="controls view-controls">
         <label><input id="shell" type="checkbox" checked> Shell</label>
+        <label><input id="labels" type="checkbox" checked> Labels</label>
         <label>Opacity <input id="opacity" type="range" min="0" max="100" value="34"></label>
         <label>Explode <input id="explode" type="range" min="0" max="100" value="0"></label>
       </div>
       <canvas id="rocket" aria-label="Interactive 3D rocket. Select a board to inspect it."></canvas>
-      <p class="bus-legend"><span>SPI</span><span>CAN</span><span>I²C</span><span>UART</span><span>Fault</span></p>
+      <p class="bus-legend"><span>SPI</span><span>CAN</span><span>I²C</span><span>UART</span><span>Fault</span><span>DC supply</span></p>
+      <p class="harness-note">Gold routes carry power on the left. Colored bus routes share the right-hand harness and light up when a transaction occurs.</p>
       <p id="orbit-note">Orbital view becomes available at the orbit acquisition cue.</p>
       <canvas id="earth" aria-label="Interactive orbital reference view" hidden></canvas>
     </section>
