@@ -14,21 +14,46 @@
 <header><a class="brand" href="/">ORBIT<span class="accent">—</span>1</a><a href="/">Mission Control</a><span class="lab">SIMULATION ONLY</span></header>
 <main class="bench">
   <div class="twin-title"><h1>Rocket electronics digital twin</h1><output id="graphics" aria-live="off">Starting WebGL</output></div>
-  <p>Scripted electronics test mission with an independent 400 km orbital reference. Vehicle geometry and pre-orbit motion are illustrative.</p>
+  <p>Look inside a virtual rocket and see how its battery, computers, and sensors work together. Everything here runs in simulation. The rocket’s shape and climb are illustrative. The orbit is calculated separately at 400 km above Earth.</p>
   <details class="flight-guide panel" open>
-    <summary>Quick start</summary>
+    <summary>New here? Start with the motion sensor</summary>
     <ol>
-      <li><strong>Explore.</strong> Drag to orbit, scroll or pinch to zoom. Select a labeled module in the cutaway or use the component buttons. Toggle the shell or move Explode to expose the racks.</li>
-      <li><strong>Run.</strong> Press Run / resume to advance the mission. Pause and use Step 250 ms to inspect one sensor sample and its packets.</li>
-      <li><strong>Try a fault.</strong> Choose Primary sensor interruption, press Inject, then step while paused. Fault focus opens the red IMU. Use Bus network to trace the failed SPI route. Recover selected fault and step again.</li>
-      <li><strong>Review.</strong> Review recording opens a timeline you can scrub or play. Return to live restores the mission controls.</li>
+      <li><strong>Find it.</strong> Click <button id="beginner-sensor" disabled>Show the motion sensor</button>. This sensor tells the computer how the rocket’s motion is changing.</li>
+      <li><strong>Watch it work.</strong> Click <strong>Run / resume</strong>. The graph shows readings over time. Drag the 3D view to turn it, or scroll to zoom.</li>
+      <li><strong>See what breaks.</strong> Click <strong>Pause</strong>, then <strong>Inject</strong> and <strong>Step 250 ms</strong> (one quarter of a second). The sensor turns red because its message didn’t reach the computer.</li>
+      <li><strong>Fix it.</strong> Click <strong>Recover selected fault</strong> and step again. The sensor turns green when readings return. If the mission has ended, click <strong>Reset</strong> to try again.</li>
     </ol>
   </details>
   <nav class="lab-nav" aria-label="Laboratory views">
-    <a href="#visual">Mission and rocket</a><a href="#components">Sensor lab</a>
-    <a href="#network">Bus network</a><a href="#power-lab">Power and scope</a>
+    <a href="#vehicle-layout">Vehicle layout</a><a href="#visual">3D explorer</a><a href="#components">Sensor lab</a>
+    <a href="#network">Bus network</a><a href="#power-lab">Power and scope</a><a href="#test-bench">Test bench</a>
     <a href="#fault-center">Faults and replay</a><a href="/#verification">Engineering status</a>
   </nav>
+  <div class="guide-dock">
+    <button id="guide-toggle" aria-controls="live-guide" aria-expanded="true">Hide live guide</button>
+    <aside id="live-guide" aria-label="On-screen guide">
+      <strong id="guide-title">Explore the electronics</strong>
+      <p id="guide-message">Point at a sensor, graph, or control to see an explanation. Select a sensor to see its current reading.</p>
+      <p id="guide-event" aria-live="polite"></p>
+    </aside>
+  </div>
+  <div id="guide-marker" aria-hidden="true" hidden></div>
+  <section class="panel vehicle-layout" id="vehicle-layout" aria-labelledby="layout-title">
+    <div class="layout-heading">
+      <div><h2 id="layout-title">Rocket equipment layout</h2>
+      <p>Start at the nose and work down to the battery. Select a deck to focus the 3D camera, or select a component to inspect it.</p></div>
+      <span class="layout-scale">Illustrative · no physical scale</span>
+    </div>
+    <div class="vehicle-index">
+      <div class="index-silhouette" aria-hidden="true">
+        <div class="index-hull"></div>
+        <span>NOSE</span><span>BASE</span>
+      </div>
+      <div id="equipment-decks" class="equipment-decks"></div>
+    </div>
+    <p class="layout-key"><span>●</span> Working <span>●</span> Check reading <span>●</span> Failed <span>●</span> Off</p>
+    <p id="layout-selection" role="status">Select a deck or component to begin.</p>
+  </section>
   <p id="error" role="status"></p>
   <section class="panel bench-controls" id="fault-center">
     <div><strong id="phase">Connecting</strong> <output id="clock"></output></div>
@@ -64,7 +89,7 @@
       </div>
       <canvas id="rocket" aria-label="Interactive 3D rocket. Select a board to inspect it."></canvas>
       <p class="bus-legend"><span>SPI</span><span>CAN</span><span>I²C</span><span>UART</span><span>Fault</span><span>DC supply</span></p>
-      <p class="harness-note">Gold routes carry power on the left. Colored bus routes share the right-hand harness and light up when a transaction occurs.</p>
+      <p class="harness-note">Gold lines show where electricity goes. Other colored lines show where messages travel. A <strong>bus</strong> is a shared path for messages. SPI, CAN, I²C, and UART are names for ways devices send them.</p>
       <p id="orbit-note">Orbital view becomes available at the orbit acquisition cue.</p>
       <canvas id="earth" aria-label="Interactive orbital reference view" hidden></canvas>
     </section>
@@ -72,7 +97,13 @@
       <div class="supply">Battery → 5 V regulator → shared rail</div>
       <div id="devices" class="devices" aria-label="Select a component"></div>
       <h3 id="component-name">Select an electronic module</h3>
+      <p id="component-purpose" class="component-purpose"></p>
       <pre id="device"></pre>
+      <button id="trace-reading">Trace this reading</button>
+      <div id="reading-trail" aria-live="polite" hidden>
+        <ol id="reading-trail-steps"></ol>
+        <button id="trail-replay">Open first affected frame</button>
+      </div>
       <p id="sensor-spec"></p><canvas id="sensor-plot" aria-label="Selected sensor history"></canvas>
       <h3>Flight computers and ground link</h3><p id="computer"></p><p id="firmware"></p>
     </section>
@@ -88,11 +119,52 @@
       <p>Channels update at 4 Hz when their power and bus are available.</p>
       <pre id="sensors"></pre><h3>Mission and fault history</h3><ol id="events"></ol>
     </section>
+    <section class="panel wide" id="sensor-reference">
+      <h2>Every modeled sensor and what it measures</h2>
+      <p>These readings come from the selected simulation frame. Click a sensor name to inspect its 3D model.</p>
+      <div id="sensor-catalog" class="sensor-catalog"></div>
+    </section>
     <section class="panel wide" id="network"><h2>Bus analyzer</h2>
       <label>Protocol <select id="bus"><option>All</option><option>SPI</option><option>CAN</option><option>I²C</option><option>UART</option></select></label>
-      <p>Transactions carry a float32 payload and a modeled CRC-16. Displayed transfer time uses the configured bit rate.</p>
+      <p>Each row is an attempted message. Start with <strong>Source</strong>, <strong>Destination</strong>, <strong>Decoded value</strong>, and <strong>Result</strong> to see who sent what and whether it arrived.</p>
+      <details><summary>What do the other columns mean?</summary>
+        <p>Payload is the message written as raw bytes. CRC is a check for changed bytes. Wire ms is the estimated transfer time in milliseconds. Rate bps is the number of bits the connection can send per second.</p>
+      </details>
       <p id="bus-utilization"></p><button id="hold-packets" aria-pressed="false">Hold packet list</button>
       <div class="table-wrap"><table><thead><tr><th>Sim s</th><th>Bus</th><th>Source</th><th>Destination</th><th>Channel</th><th>Payload (hex)</th><th>CRC</th><th>Decoded value</th><th>Wire ms</th><th>Rate bps</th><th>Result</th></tr></thead><tbody id="messages"></tbody></table></div>
+    </section>
+    <section class="panel wide" id="test-bench">
+      <h2>Scenario test bench</h2>
+      <p>Run the same model twice. The baseline has no injected fault. The trial has one fault, and both use the same starting conditions and noise seed.</p>
+      <form id="scenario-form" class="controls">
+        <label>Fault <select name="fault" required></select></label>
+        <label>Sensor <select name="sensor" required></select></label>
+        <label>Inject at <input name="inject_s" type="number" min=".25" max="89.75" step=".25" value="25" required> s</label>
+        <label>Recover at <input name="recover_s" type="number" min=".5" max="90" step=".25" value="30" required> s</label>
+        <label>Expected during fault <select name="expect">
+          <option>unavailable</option><option>available</option><option>failed</option><option>healthy</option>
+          <option>rail below threshold</option><option>rail nominal</option>
+        </select></label>
+        <button type="submit">Run baseline and trial</button>
+      </form>
+      <p id="scenario-status" role="status"></p>
+      <div id="scenario-result" hidden>
+        <ol id="scenario-checks"></ol>
+        <div class="controls">
+          <label>Compare at <input id="comparison-seek" type="range" min="0" max="360" value="0"></label>
+          <output id="comparison-time"></output>
+          <button id="comparison-3d">Show both 3D views</button>
+          <button id="scenario-export">Export test evidence</button>
+        </div>
+        <canvas id="comparison-plot" aria-label="Supply rail comparison"></canvas>
+        <div class="comparison-panes">
+          <article><h3>Baseline</h3><pre id="comparison-baseline"></pre><canvas id="comparison-baseline-3d" hidden></canvas><button id="replay-baseline">Open baseline in replay</button></article>
+          <article><h3>Fault trial</h3><pre id="comparison-trial"></pre><canvas id="comparison-trial-3d" hidden></canvas><button id="replay-trial">Open trial in replay</button></article>
+        </div>
+      </div>
+      <h3>Firmware-in-the-loop evidence</h3>
+      <p>This separate QEMU test sends two synthetic samples over UART and checks how Zephyr reports the gap.</p>
+      <button id="firmware-bench-load">Load firmware test report</button><pre id="firmware-bench-report" aria-live="polite"></pre>
     </section>
   </div>
 </main>

@@ -122,7 +122,7 @@ class ElectronicsLab:
                    and (name != 'gnss' or t >= 50)}
         if t >= 35:
             enabled.remove('checkout_load')
-        current = sum(DEVICES[name][1] for name in enabled)
+        current = sum(load for name, (_, load) in DEVICES.items() if name in enabled)
         ocv = 6.0 if 'battery' in fault else 7.2 + 1.2 * self.soc
         efficiency = 0.88
         # Solve V_terminal = OCV - R*I, with I = P/V_terminal.

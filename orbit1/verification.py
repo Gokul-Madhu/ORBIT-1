@@ -10,7 +10,8 @@ def source_digest():
     paths = set()
     for pattern in ('orbit1/*.py', 'orbit1/web/*.js', 'orbit1/web/*.html', 'orbit1/web/*.css',
                     'tests/*.py', 'tests/*.mjs', 'scripts/*.py', 'scripts/*.sh', '*.ps1',
-                    'zephyr/src/*.c', 'zephyr/prj.conf', 'zephyr/CMakeLists.txt'):
+                    'zephyr/src/*.c', 'zephyr/prj.conf', 'zephyr/CMakeLists.txt',
+                    'zephyr/bench/*.c', 'zephyr/bench/prj.conf', 'zephyr/bench/CMakeLists.txt'):
         paths.update(ROOT.glob(pattern))
     digest = hashlib.sha256()
     for path in sorted(paths):

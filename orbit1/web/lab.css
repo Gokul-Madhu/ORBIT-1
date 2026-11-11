@@ -8,6 +8,63 @@
 .flight-guide summary { cursor: pointer; color: #83e8ff; font-weight: 700; }
 .flight-guide ol { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .6rem 1.6rem; padding-left: 1.5rem; margin-bottom: 0; }
 .flight-guide li { line-height: 1.5; }
+.flight-guide button { color: #c5f5ff; padding: .3rem .55rem; }
+.component-purpose { color: #c9e3f1; border-left: 2px solid #3bb3df; padding-left: .65rem; }
+.guide-dock { position: sticky; top: .35rem; z-index: 12; margin: .65rem 0; padding: .55rem .7rem;
+  border: 1px solid #386888; border-radius: 6px; background: #0a1b2d; box-shadow: 0 5px 18px #0005; }
+.guide-dock button { float: right; font-size: .76rem; padding: .25rem .5rem; margin-left: .6rem; }
+.guide-dock::after { content: ''; display: block; clear: both; }
+#guide-title { color: #9ce8ff; }
+.guide-dock p { margin: .24rem 0 0; color: #d0e3f4; font-size: .84rem; }
+#guide-marker { position: fixed; top: 0; left: 0; z-index: 40; width: 10px; height: 10px; border-radius: 50%;
+  background: #9ce8ff; box-shadow: 0 0 13px #63dfff; pointer-events: none; }
+.sensor-catalog { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: .65rem; }
+.sensor-catalog article { border: 1px solid #294963; border-left-width: 3px; padding: .75rem; background: #0d1c2d; }
+.sensor-catalog article[data-health=HEALTHY] { border-left-color: #48efb2; }
+.sensor-catalog article[data-health=FAILED] { border-left-color: #ff6279; }
+.sensor-catalog article[data-health=WARNING] { border-left-color: #ffbe63; }
+.sensor-catalog p { margin: .45rem 0 0; font-size: .83rem; color: #c5d8e8; }
+.sensor-catalog strong { color: #8ae4ff; }
+#guide-event:not(:empty) { border-left: 2px solid #eab36b; padding-left: .55rem; color: #ffe0ae; }
+#reading-trail { padding: .55rem .75rem; border: 1px solid #345776; margin-top: .55rem; }
+#reading-trail li { margin: .3rem 0; }
+#scenario-form input[type=number] { max-width: 5.4rem; }
+.comparison-panes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: .75rem; }
+.comparison-panes article { border: 1px solid #294963; padding: .8rem; min-width: 0; }
+#comparison-plot { height: 165px; }
+.bench .vehicle-layout {
+  margin: 1rem 0;
+  border: 1px solid #2c5272;
+  background: linear-gradient(125deg, #10253c, #0a1423 65%);
+}
+.layout-heading { display: flex; align-items: start; justify-content: space-between; gap: .7rem; flex-wrap: wrap; }
+.layout-heading h2 { margin: 0; }
+.layout-heading p { margin: .4rem 0 .9rem; }
+.layout-scale { color: #aec6de; font-size: .78rem; }
+.vehicle-index { display: grid; grid-template-columns: minmax(65px, .21fr) minmax(0, 1fr); gap: 1rem; }
+.index-silhouette { display: grid; grid-template-rows: 1fr auto; position: relative; text-align: center; color: #a8daee; font: .7rem monospace; }
+.index-hull {
+  position: absolute; inset: 1.6rem 8% 1.35rem;
+  clip-path: polygon(50% 0, 76% 6%, 93% 14%, 95% 86%, 100% 96%, 100% 100%, 0 100%, 0 96%, 5% 86%, 7% 14%, 24% 6%);
+  background: repeating-linear-gradient(to bottom, transparent 0 19%, #72daff 19% 20%),
+    linear-gradient(90deg, #294360, #75b6d7 50%, #26486c);
+}
+.equipment-decks { display: grid; gap: .5rem; min-width: 0; }
+.equipment-deck { padding: .65rem .8rem; border-left: 2px solid #5299bc; background: #0e1d30; }
+.equipment-deck p { margin: .25rem 0 .45rem; color: #bad0e4; font-size: .84rem; }
+.equipment-deck .deck-focus { font-weight: 700; color: #b6e8ff; padding: .3rem .55rem; }
+.deck-components { display: flex; flex-wrap: wrap; gap: .35rem; }
+.deck-components button { font-size: .79rem; padding: .3rem .55rem; }
+.deck-components button::before { content: '●'; margin-right: .35rem; color: #8195aa; }
+.deck-components button[data-health=HEALTHY]::before, .layout-key span:nth-child(1) { color: #48efb2; }
+.deck-components button[data-health=WARNING]::before, .layout-key span:nth-child(2) { color: #ffbe63; }
+.deck-components button[data-health=FAILED]::before, .layout-key span:nth-child(3) { color: #ff6279; }
+.layout-key span:nth-child(4) { color: #8195aa; }
+.layout-key span:not(:first-child) { margin-left: .55rem; }
+.deck-components button[aria-pressed=true] { border-color: #72daff; }
+@media (max-width: 500px) {
+  .vehicle-index { grid-template-columns: minmax(40px, .16fr) minmax(0, 1fr); gap: .5rem; }
+}
 .harness-note { color: #aec4d9; font-size: .82rem; }
 .bus-legend span:nth-child(6) { color: #ffdf82; }
 .bench h1 { margin-top: 1rem; }

@@ -1,5 +1,8 @@
 import {MissionScene} from './scene.js';
 import {RocketTwin} from './twin.js';
+import {MODULE_NAMES, VEHICLE_ZONES} from './layout.js';
+import {createSensorGuide} from './sensor-guide.js';
+import {createTestBench, readingTrail} from './test-bench.js';
 
 const byId = id => document.getElementById(id);
 const write = (id, value) => { byId(id).textContent = value; };
@@ -16,6 +19,31 @@ let playback;
 let visibleFrame;
 let adaptiveQuality = 'auto';
 let work = Promise.resolve();
+const equipmentButtons = new Map();
+const sensorGuide = createSensorGuide(selectDevice);
+const testBench = createTestBench({request, read: reading, openReplay, download});
+const PURPOSE = {
+  primary: 'The main computer collects readings and sends them to the radio.',
+  backup: 'The spare computer can take over when the main computer fails and power is available.',
+  sensor_a: 'This motion sensor measures acceleration in three directions. The computer reads it over the cyan SPI path.',
+  sensor_b: 'This second motion sensor provides a reading the computer can compare with the primary sensor.',
+  gyro: 'The gyroscope measures how quickly the rocket is turning in three directions.',
+  pressure: 'This sensor measures how strongly the surrounding gas pushes. The lab changes that pressure as the mission advances.',
+  temperature: 'This probe reports how warm the electronics are in the power model.',
+  gnss: 'This receiver shows the rocket’s calculated position once it reaches the simulated orbit.',
+  regulator: 'The regulator supplies a steady five volts so the computers and sensors can work.',
+  monitor: 'The power monitor shows the supply voltage and how much current the devices draw.',
+  radio: 'The radio passes simulated messages from the computer to the ground station.',
+  payload: 'The payload is the equipment the rocket carries. It starts up after the orbit milestone.',
+  battery: 'The battery supplies energy to the electronics through the regulator.',
+  checkout_load: 'This device draws power during early checks and is disconnected at the stage milestone.',
+};
+const HEALTH_EXPLANATION = {
+  HEALTHY: 'Green means this component is working in the current simulation step.',
+  WARNING: 'Amber means the component is available, but its readings need checking.',
+  FAILED: 'Red means this component cannot perform its modeled job in the current step.',
+  OFF: 'Gray means this component is off or has yet to start.',
+};
 
 try {
   twin = new RocketTwin(byId('rocket'), (name, part) => selectDevice(name, part));
@@ -124,10 +152,45 @@ function sensorPlot(frames) {
 }
 
 function selectDevice(name, part = '') {
+  if (device !== name) byId('reading-trail').hidden = true;
   device = name;
   chipName = part || '';
   setMode('pcb');
   render();
+}
+
+function buildVehicleLayout() {
+  for (const zone of VEHICLE_ZONES) {
+    const card = document.createElement('section');
+    card.className = 'equipment-deck';
+    const heading = document.createElement('button');
+    heading.className = 'deck-focus';
+    heading.textContent = zone.title;
+    heading.onclick = () => {
+      setMode('vehicle');
+      twin?.focusDeck(zone.height);
+      write('layout-selection', `3D view focused on ${zone.title.toLowerCase()}.`);
+      byId('visual').scrollIntoView({block: 'nearest'});
+    };
+    const summary = document.createElement('p');
+    summary.textContent = zone.summary;
+    const modules = document.createElement('div');
+    modules.className = 'deck-components';
+    for (const name of zone.modules) {
+      const button = document.createElement('button');
+      button.dataset.equipment = name;
+      button.textContent = MODULE_NAMES[name];
+      button.onclick = () => {
+        selectDevice(name);
+        write('layout-selection', `Inspecting ${MODULE_NAMES[name]} in the 3D view.`);
+        byId('visual').scrollIntoView({block: 'nearest'});
+      };
+      equipmentButtons.set(name, button);
+      modules.append(button);
+    }
+    card.append(heading, summary, modules);
+    byId('equipment-decks').append(card);
+  }
 }
 
 function setMode(mode) {
@@ -145,6 +208,14 @@ function render() {
   if (!data) return;
   const index = replay ? Number(byId('seek').value) : 0;
   const frame = replay ? replay.frames[index] : data.state;
+  testBench.configure(data);
+  if (!equipmentButtons.size) buildVehicleLayout();
+  for (const [name, button] of equipmentButtons) {
+    const health = frame.devices[name]?.health || 'OFF';
+    button.dataset.health = health;
+    button.setAttribute('aria-label', `${MODULE_NAMES[name]}, ${health.toLowerCase()}`);
+    button.setAttribute('aria-pressed', String(device === name));
+  }
   const source = replay || data;
   visibleFrame = frame;
   const history = replay ? replay.frames.slice(0, index + 1) : data.frames;
@@ -173,11 +244,14 @@ function render() {
   });
   const component = frame.devices[device];
   const transactions = source.transactions.filter(row => row.t_s <= frame.t_s);
+  sensorGuide.update(frame, data.sensor_specs, transactions, reading, device);
   const latest = transactions.filter(row => row.source === device || row.destination === device).at(-1);
   const spec = data.sensor_specs[device];
+  byId('trace-reading').disabled = !spec;
   const sample = reading(frame, device);
   const values = sample ? sample.map(value => value.toFixed(3)).join(' / ') : 'No valid sample';
   write('component-name', `${spec?.[0] || device.replace('_', ' ')}${chipName ? ' · ' + chipName : ''}`);
+  write('component-purpose', [PURPOSE[device], HEALTH_EXPLANATION[component.health]].filter(Boolean).join(' '));
   write('device', [
     `${component.health} · ${component.powered ? 'Powered' : 'Unpowered'}`,
     `${component.bus}${component.load_a == null ? '' : ' · ' + component.load_a + ' A nominal'}`,
@@ -273,7 +347,14 @@ async function refresh() {
     Object.entries(data.available_faults).forEach(([key, title]) => byId('fault').add(new Option(title, key)));
   }
   render();
+  byId('beginner-sensor').disabled = false;
 }
+
+byId('beginner-sensor').onclick = () => {
+  selectDevice('sensor_a');
+  byId('fault').value = 'imu';
+  byId('components').scrollIntoView({block: 'nearest'});
+};
 
 function command(name, value) {
   action(async () => {
@@ -317,13 +398,36 @@ byId('wave').onclick = event => {
   const seconds = heldWave?.history ?? (byId('trace').value === 'history');
   write('cursor', `${point[0]} ${seconds ? 's' : 'ms'} · ${point[1].toFixed(3)} V / ${point[2].toFixed(3)} V`);
 };
-byId('replay').onclick = () => action(async () => {
-  replay = await request('/api/lab/recording');
+function openReplay(recording, index = 0) {
+  stopPlayback();
+  replay = recording;
   byId('seek').disabled = false;
   byId('seek').max = replay.frames.length - 1;
-  byId('seek').value = 0;
+  byId('seek').value = index;
   byId('playback').disabled = false;
   render();
+}
+byId('replay').onclick = () => action(async () => openReplay(await request('/api/lab/recording')));
+byId('trace-reading').onclick = () => action(async () => {
+  const sensor = device;
+  const frameTime = visibleFrame.t_s;
+  const recording = replay || await request('/api/lab/recording');
+  const index = recording.frames.findIndex(frame => frame.t_s === frameTime);
+  if (index < 0) throw Error('That frame is no longer in the recording');
+  const trail = readingTrail(recording, index, sensor, reading);
+  byId('reading-trail-steps').replaceChildren(...trail.steps.map(step => {
+    const li = document.createElement('li');
+    li.textContent = step;
+    return li;
+  }));
+  byId('reading-trail').hidden = false;
+  byId('trail-replay').textContent = trail.present ? 'Open this frame in replay' : 'Open first affected frame';
+  byId('trail-replay').onclick = () => {
+    device = sensor;
+    chipName = '';
+    setMode('network');
+    openReplay(recording, trail.first);
+  };
 });
 function stopPlayback() {
   clearInterval(playback);

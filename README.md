@@ -4,6 +4,8 @@ The **Electronics lab** opens automatically when launched from Windows. It is al
 available at `http://localhost:8780/lab.html`, with a link back to orbital
 Mission Control. See [the electronics laboratory guide](docs/ELECTRONICS_LAB.md)
 for controls, models, and fidelity limits.
+See the [scenario test bench guide](docs/SCENARIO_TEST_BENCH.md) to compare
+normal operation against a fault and reproduce the separate Zephyr UART test.
 
 A complete **local, simulation-only** orbital laboratory: Python Kepler mechanics, an interactive WebGL Earth, recorded mission replay, and synthetic Zephyr RTOS telemetry from QEMU. There are no physical measurements, vehicle commands, actuators, propulsion, launch sequences, or flight-control outputs.
 

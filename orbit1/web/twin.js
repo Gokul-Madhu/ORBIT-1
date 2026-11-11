@@ -323,6 +323,16 @@ export class RocketTwin {
     this.updateVisibility();
   }
 
+  focusDeck(height) {
+    this.mode = 'vehicle';
+    const target = new THREE.Vector3(0, height, .22);
+    this.cameraGoal = {
+      target,
+      position: target.clone().add(new THREE.Vector3(2.3, .7, 6.2)),
+    };
+    this.updateVisibility();
+  }
+
   updateVisibility() {
     this.structure.visible = ['vehicle', 'avionics'].includes(this.mode);
     this.exterior.visible = this.mode === 'mission';
