@@ -21,8 +21,9 @@ from urllib.parse import urlparse
 from .orbit import MU, R_EARTH
 from .telemetry import parse_line
 from .engine import Orbit
-from .lab import ElectronicsLab
-from .scenarios import run_scenario
+from .lab import ElectronicsLab, SENSOR_SPECS
+from .instrument_array import array_manifest
+from .scenarios import run_campaign, run_scenario
 from .verification import read_evidence
 from dataclasses import asdict
 import mimetypes
@@ -341,6 +342,8 @@ def make_handler(mission):
 
         def do_GET(self):
             path = urlparse(self.path).path
+            if path == '/api/lab/array-manifest':
+                return self._respond(200, json.dumps(array_manifest(SENSOR_SPECS)).encode())
             if path == '/api/lab/firmware-bench':
                 report = ROOT / '.runtime' / 'firmware-bench.json'
                 try:
@@ -378,7 +381,7 @@ def make_handler(mission):
 
         def do_POST(self):
             path = urlparse(self.path).path
-            if path not in ('/api/command', '/api/lab', '/api/lab/scenario'):
+            if path not in ('/api/command', '/api/lab', '/api/lab/scenario', '/api/lab/campaign'):
                 return self._respond(404,b'{"error":"Unknown endpoint"}')
             origin = self.headers.get('Origin')
             # Localhost only; additionally reject browser writes from other origins.
@@ -391,6 +394,8 @@ def make_handler(mission):
                 data=json.loads(self.rfile.read(length))
                 if path == '/api/lab/scenario':
                     result = run_scenario(data)
+                elif path == '/api/lab/campaign':
+                    result = run_campaign(data)
                 elif path == '/api/lab':
                     if not isinstance(data, dict):
                         raise ValueError('Expected a JSON object')

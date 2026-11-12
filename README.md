@@ -82,10 +82,12 @@ This runs:
 2. Python unit and HTTP integration tests in Ubuntu-24.04.
 3. A real Zephyr build in `zephyr/build-validation`.
 4. A bounded QEMU run checking packet cadence, synthetic degradation, recovery, malformed-record count, and stale-link detection.
-5. A separate managed application on port 8781, verifying live QEMU, duplicate-launch rejection, clean HTTP/QEMU shutdown, and saved recording.
-6. Actual headless Chrome interactions: WebGL rendering, spacecraft motion, camera drag, time controls, faults, orbit configuration, charts, replay, export/import, offline recovery, test rerun, responsive layout, and renderer failure fallback.
+5. A separate managed application on port 8781 verifies live QEMU, rejection of duplicate ports and shared build directories, clean HTTP/QEMU shutdown, and a saved recording.
+6. Headless Chrome exercises WebGL, spacecraft motion, camera drag, time controls, faults, orbit configuration, charts, replay, export/import, offline recovery, test reruns, responsive layouts, renderer fallback, and Flow Mesh fault tracing.
 
 The browser harness uses an installed Windows Chrome and Playwright. The development environment has Playwright in `.tools/python`; for a fresh checkout install it with `python -m pip install --target .tools/python playwright==1.48.0`. The application itself does not need Playwright or Node. `--executable` and `--url` can be passed to `verify.ps1` for another browser executable or application URL. Port 8781 must be free for the isolated lifecycle check.
+
+Browser verification resets and runs both simulations on its target server. To preserve a working session, start a separate instance with `./start.ps1 --port 8782` and target it with `./verify.ps1 --url http://localhost:8782`. Alternate ports get separate QEMU build directories by default.
 
 For backend-only verification in Ubuntu use `bash scripts/verify.sh`. For the quick offline Python suite use `bash scripts/run_tests.sh`.
 

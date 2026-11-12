@@ -14,7 +14,7 @@ def source_digest():
                     'zephyr/bench/*.c', 'zephyr/bench/prj.conf', 'zephyr/bench/CMakeLists.txt'):
         paths.update(ROOT.glob(pattern))
     digest = hashlib.sha256()
-    for path in sorted(paths):
+    for path in sorted(paths, key=lambda path: path.relative_to(ROOT).as_posix()):
         digest.update(path.relative_to(ROOT).as_posix().encode())
         digest.update(path.read_bytes())
     return digest.hexdigest()

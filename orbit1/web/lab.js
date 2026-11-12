@@ -1,8 +1,12 @@
 import {MissionScene} from './scene.js';
 import {RocketTwin} from './twin.js';
 import {MODULE_NAMES, VEHICLE_ZONES} from './layout.js';
+import {EXTRA_INSTRUMENTS} from './instrument-layout.js';
+import {createInstrumentArray} from './instrument-array.js';
+import {createSystemFlow} from './system-flow.js';
 import {createSensorGuide} from './sensor-guide.js';
 import {createTestBench, readingTrail} from './test-bench.js';
+import {createReliabilityLab} from './reliability-lab.js';
 
 const byId = id => document.getElementById(id);
 const write = (id, value) => { byId(id).textContent = value; };
@@ -14,14 +18,56 @@ let scene;
 let twin;
 let chipName = '';
 let heldWave;
+let waveSource;
+let waveCursor;
 let heldPackets;
 let playback;
 let visibleFrame;
+let guideEvidence;
 let adaptiveQuality = 'auto';
 let work = Promise.resolve();
 const equipmentButtons = new Map();
-const sensorGuide = createSensorGuide(selectDevice);
-const testBench = createTestBench({request, read: reading, openReplay, download});
+const instrumentArray = createInstrumentArray({request, read: reading, download});
+const systemFlow = createSystemFlow({read: reading, navigate: showWorkspace, explain: showGuideEvidence});
+const sensorGuide = createSensorGuide(selectDevice, showGuideEvidence);
+const reliability = createReliabilityLab({request, read: reading, navigate: showWorkspace, openEvidence, download});
+const testBench = createTestBench({request, read: reading, openReplay: (recording, index) => {
+  showWorkspace('visual');
+  openReplay(recording, index);
+}, download});
+const workspace = byId('workspace-panes');
+const viewButtons = [...document.querySelectorAll('[data-workspace-view]')];
+const viewSelect = byId('workspace-select');
+const narrowWorkspace = matchMedia('(max-width: 760px)');
+for (const button of viewButtons) {
+  const view = button.dataset.workspaceView;
+  button.setAttribute('aria-controls', view);
+  button.onclick = () => showWorkspace(view);
+  viewSelect.add(new Option(button.textContent.trim(), view));
+}
+viewSelect.onchange = () => showWorkspace(viewSelect.value);
+window.addEventListener('hashchange', () => showWorkspace(location.hash.slice(1)));
+
+function showWorkspace(requested) {
+  const view = viewButtons.some(button => button.dataset.workspaceView === requested)
+    ? requested : 'visual';
+  workspace.dataset.view = view;
+  viewSelect.value = view;
+  write('workspace-title', viewButtons.find(button => button.dataset.workspaceView === view).textContent.trim());
+  for (const button of viewButtons) {
+    button.setAttribute('aria-pressed', String(button.dataset.workspaceView === view));
+  }
+  for (const pane of workspace.children) {
+    pane.hidden = pane.id !== view && !(view === 'visual' && pane.id === 'components');
+  }
+  history.replaceState(null, '', '#' + view);
+  if (view === 'requirements') reliability.showRequirements();
+  requestAnimationFrame(() => {
+    twin?.resize();
+    if (view === 'visual' && byId('twin-mode').value === 'orbit') scene?.resize();
+    render();
+  });
+}
 const PURPOSE = {
   primary: 'The main computer collects readings and sends them to the radio.',
   backup: 'The spare computer can take over when the main computer fails and power is available.',
@@ -29,6 +75,18 @@ const PURPOSE = {
   sensor_b: 'This second motion sensor provides a reading the computer can compare with the primary sensor.',
   gyro: 'The gyroscope measures how quickly the rocket is turning in three directions.',
   pressure: 'This sensor measures how strongly the surrounding gas pushes. The lab changes that pressure as the mission advances.',
+  strain_upper: 'This gauge tracks simulated stretching of the shell near the payload bay.',
+  strain_lower: 'This gauge tracks simulated stretching of the lower equipment frame.',
+  vibration_upper: 'This sensor measures the modeled shaking at the upper deck.',
+  vibration_lower: 'This sensor measures the modeled shaking at the lower deck.',
+  skin_upper: 'This probe tracks simulated temperature on the upper outer shell.',
+  skin_lower: 'This probe tracks simulated temperature on the lower outer shell.',
+  sound_upper: 'This microphone shows the relative sound level in the upper bay.',
+  sound_lower: 'This microphone shows the relative sound level near the lower deck.',
+  heat_upper: 'This gauge shows how quickly heat enters the upper surface in the prescribed test profile.',
+  heat_lower: 'This gauge shows how quickly heat enters the lower surface in the prescribed test profile.',
+  payload_switch: 'This switch indicates when the virtual payload reaches its operating milestone.',
+  payload_supply: 'This monitor shows whether the payload branch has voltage and how much nominal current it draws.',
   temperature: 'This probe reports how warm the electronics are in the power model.',
   gnss: 'This receiver shows the rocket’s calculated position once it reaches the simulated orbit.',
   regulator: 'The regulator supplies a steady five volts so the computers and sensors can work.',
@@ -73,8 +131,14 @@ function draw(frame, frames) {
   const history = heldWave?.history ?? (byId('trace').value === 'history');
   const samples = heldWave?.points ?? (history
     ? frames.map(item => [item.t_s, item.battery_v, item.rail_v]) : frame.waveform);
+  waveSource = {history, points: samples};
   const windowSize = Math.max(2, Math.ceil(samples.length * Number(byId('timebase').value)));
   points = samples.slice(-windowSize);
+  if (waveCursor && (waveCursor.history !== history ||
+    !points.some(point => point.every((value, index) => value === waveCursor.point[index])))) {
+    waveCursor = undefined;
+    write('cursor', 'Click the trace to read a sample');
+  }
   const canvas = byId('wave');
   canvas.width = canvas.clientWidth || 400;
   canvas.height = canvas.clientHeight || 210;
@@ -156,6 +220,7 @@ function selectDevice(name, part = '') {
   device = name;
   chipName = part || '';
   setMode('pcb');
+  showWorkspace(narrowWorkspace.matches ? 'components' : 'visual');
   render();
 }
 
@@ -170,7 +235,7 @@ function buildVehicleLayout() {
       setMode('vehicle');
       twin?.focusDeck(zone.height);
       write('layout-selection', `3D view focused on ${zone.title.toLowerCase()}.`);
-      byId('visual').scrollIntoView({block: 'nearest'});
+      showWorkspace('visual');
     };
     const summary = document.createElement('p');
     summary.textContent = zone.summary;
@@ -183,7 +248,6 @@ function buildVehicleLayout() {
       button.onclick = () => {
         selectDevice(name);
         write('layout-selection', `Inspecting ${MODULE_NAMES[name]} in the 3D view.`);
-        byId('visual').scrollIntoView({block: 'nearest'});
       };
       equipmentButtons.set(name, button);
       modules.append(button);
@@ -197,6 +261,7 @@ function setMode(mode) {
   byId('twin-mode').value = mode;
   byId('rocket').hidden = mode === 'orbit';
   byId('earth').hidden = mode !== 'orbit';
+  byId('precision-tools').hidden = mode === 'orbit';
   if (mode === 'orbit') {
     scene?.resize();
     scene?.render(visibleFrame?.orbital_reference);
@@ -209,6 +274,7 @@ function render() {
   const index = replay ? Number(byId('seek').value) : 0;
   const frame = replay ? replay.frames[index] : data.state;
   testBench.configure(data);
+  reliability.configure(data.available_faults);
   if (!equipmentButtons.size) buildVehicleLayout();
   for (const [name, button] of equipmentButtons) {
     const health = frame.devices[name]?.health || 'OFF';
@@ -218,13 +284,29 @@ function render() {
   }
   const source = replay || data;
   visibleFrame = frame;
+  if (guideEvidence?.time !== frame.t_s || guideEvidence?.replay !== replay) {
+    guideEvidence = undefined;
+    byId('guide-evidence').hidden = true;
+  }
   const history = replay ? replay.frames.slice(0, index + 1) : data.frames;
+  instrumentArray.update(frame, history);
   write('phase', frame.phase);
-  write('clock', `${frame.t_s.toFixed(2)} simulation s · ${replay ? 'REPLAY' : data.running ? 'RUNNING' : 'PAUSED'}`);
+  const complete = data.state.phase === 'Complete';
+  const mode = replay ? 'REPLAY' : complete ? 'ENDED' : data.running ? 'RUNNING' : 'PAUSED';
+  write('clock', `${frame.t_s.toFixed(2)} simulation s · ${mode}`);
+  write('mission-hint', replay ? 'Return to live in Faults & Replay to use mission controls.'
+    : complete ? 'Reset to start a new mission, or open Faults & Replay to review this run.' : '');
   write('active', (replay ? frame.faults : data.active_faults).map(key => data.available_faults[key]).join(' · '));
   byId('speed').value = data.speed;
-  document.querySelectorAll('[data-command], #speed').forEach(control => { control.disabled = Boolean(replay); });
+  document.querySelectorAll('[data-command]').forEach(control => {
+    const command = control.dataset.command;
+    control.disabled = Boolean(replay) || (complete && command !== 'reset')
+      || (data.running && ['start', 'step'].includes(command))
+      || (!data.running && command === 'pause');
+  });
+  byId('speed').disabled = Boolean(replay) || complete;
   const deviceList = byId('devices');
+  const componentSelect = byId('component-select');
   if (!deviceList.children.length) {
     Object.keys(frame.devices).forEach(name => {
       const button = document.createElement('button');
@@ -233,7 +315,17 @@ function render() {
       button.onclick = () => selectDevice(name);
       deviceList.append(button);
     });
+    for (const zone of VEHICLE_ZONES) {
+      const group = document.createElement('optgroup');
+      group.label = zone.title;
+      for (const name of zone.modules) {
+        group.append(new Option(MODULE_NAMES[name], name));
+      }
+      componentSelect.append(group);
+    }
+    componentSelect.onchange = () => selectDevice(componentSelect.value);
   }
+  componentSelect.value = device;
   Object.entries(frame.devices).forEach(([name, value], i) => {
     const button = deviceList.children[i];
     button.classList.toggle('selected', name === device);
@@ -251,7 +343,8 @@ function render() {
   const sample = reading(frame, device);
   const values = sample ? sample.map(value => value.toFixed(3)).join(' / ') : 'No valid sample';
   write('component-name', `${spec?.[0] || device.replace('_', ' ')}${chipName ? ' · ' + chipName : ''}`);
-  write('component-purpose', [PURPOSE[device], HEALTH_EXPLANATION[component.health]].filter(Boolean).join(' '));
+  write('component-purpose', [PURPOSE[device] || EXTRA_INSTRUMENTS[device]?.[5],
+    HEALTH_EXPLANATION[component.health]].filter(Boolean).join(' '));
   write('device', [
     `${component.health} · ${component.powered ? 'Powered' : 'Unpowered'}`,
     `${component.bus}${component.load_a == null ? '' : ' · ' + component.load_a + ' A nominal'}`,
@@ -267,6 +360,13 @@ function render() {
   byId('fault-focus').onclick = () => selectDevice(failures[0][0]);
   write('computer', `Host model: ${frame.health}, controller ${frame.controller}, ${frame.watchdog_resets} watchdog resets. Payload ${frame.payload}. Ground link: ${frame.radio_received} received, ${frame.radio_dropped} dropped.`);
   const firmware = data.firmware;
+  systemFlow.update(frame, history.at(-2), data.sensor_specs, transactions, firmware, Boolean(replay));
+  const hostStatus = byId('host-health');
+  const firmwareStatus = byId('firmware-health');
+  hostStatus.dataset.status = frame.health;
+  firmwareStatus.dataset.status = firmware.status === 'LIVE' ? (firmware.packet?.health || 'LIVE') : firmware.status;
+  write('host-health', `Host · ${frame.health.toLowerCase()}`);
+  write('firmware-health', `Firmware · ${firmware.status.toLowerCase()}${firmware.status === 'LIVE' && firmware.packet ? ' / ' + firmware.packet.health.toLowerCase() : ''}`);
   write('firmware', `Live QEMU (independent firmware clock): ${firmware.status}${firmware.packet ? ', ' + firmware.packet.uptime_ms + ' ms uptime, ' + firmware.packet.health : ''}`);
   write('power', `Battery ${frame.battery_v.toFixed(2)} V / ${frame.battery_a.toFixed(3)} A · rail ${frame.rail_v.toFixed(2)} V · ${frame.load_w.toFixed(2)} W load · ${frame.charge_pct.toFixed(2)}% charge`);
   write('sensors', Object.entries(data.sensor_specs).map(([name, info]) => {
@@ -280,10 +380,19 @@ function render() {
     return row;
   }));
   const bus = byId('bus').value;
-  const display = (heldPackets || transactions).filter(row => bus === 'All' || row.bus === bus);
-  const tick = display.filter(row => row.t_s === frame.t_s);
+  const result = byId('bus-result').value;
+  const query = byId('bus-component').value.trim().toLowerCase();
+  const byProtocol = (heldPackets || transactions).filter(row => bus === 'All' || row.bus === bus);
+  const display = byProtocol.filter(row =>
+    (result === 'all' || (result === 'ok') === (row.result === 'ok')) &&
+    (!query || [row.source, row.destination].some(name =>
+      name.toLowerCase().includes(query) || data.sensor_specs[name]?.[0].toLowerCase().includes(query))));
+  const tick = byProtocol.filter(row => row.t_s === frame.t_s);
   const load = tick.reduce((total, row) => total + row.wire_ms, 0) / 2.5;
   write('bus-utilization', `Modeled occupancy this 250 ms tick: ${load.toFixed(2)}% ${bus === 'All' ? '(sum across buses)' : ''}. Protocol retries are unmodeled.`);
+  write('bus-matches', display.length
+    ? `Showing ${Math.min(24, display.length)} of ${display.length} matching attempts in the packet buffer.`
+    : 'No matching attempts in the packet buffer.');
   byId('messages').replaceChildren(...display.slice(-24).reverse().map(row => {
     const tr = document.createElement('tr');
     tr.classList.toggle('failed', row.result !== 'ok');
@@ -353,7 +462,6 @@ async function refresh() {
 byId('beginner-sensor').onclick = () => {
   selectDevice('sensor_a');
   byId('fault').value = 'imu';
-  byId('components').scrollIntoView({block: 'nearest'});
 };
 
 function command(name, value) {
@@ -367,10 +475,17 @@ document.querySelectorAll('[data-command]').forEach(button => {
   button.onclick = () => command(button.dataset.command, byId('fault').value);
 });
 byId('speed').onchange = () => command('speed', Number(byId('speed').value));
-for (const id of ['bus', 'trace', 'seek']) byId(id).oninput = render;
+for (const id of ['bus', 'bus-result', 'bus-component', 'trace', 'seek']) byId(id).oninput = render;
 for (const id of ['timebase', 'volts']) byId(id).onchange = render;
 for (const id of ['opacity', 'explode', 'shell', 'quality']) byId(id).oninput = configureTwin;
 byId('labels').onchange = event => twin?.showLabels(event.target.checked);
+byId('projection').onchange = event => twin?.setProjection(event.target.value);
+document.querySelectorAll('[data-camera-view]').forEach(button => {
+  button.onclick = () => twin?.viewFrom(button.dataset.cameraView);
+});
+byId('zoom-in').onclick = () => twin?.zoomBy(1.2);
+byId('zoom-out').onclick = () => twin?.zoomBy(1 / 1.2);
+byId('reference-grid').onchange = event => twin?.showGrid(event.target.checked);
 byId('twin-mode').onchange = event => { setMode(event.target.value); render(); };
 byId('camera-reset').onclick = () => {
   setMode(byId('twin-mode').value);
@@ -381,7 +496,7 @@ byId('fullscreen').onclick = () => action(async () => {
   else await byId('visual').requestFullscreen();
 });
 byId('freeze-wave').onclick = () => {
-  heldWave = heldWave ? undefined : {history: byId('trace').value === 'history', points: [...points]};
+  heldWave = heldWave ? undefined : waveSource;
   byId('trace').disabled = Boolean(heldWave);
   byId('freeze-wave').setAttribute('aria-pressed', String(Boolean(heldWave)));
   render();
@@ -395,7 +510,8 @@ byId('wave').onclick = event => {
   if (!points.length) return;
   const fraction = Math.min(1, Math.max(0, (event.offsetX - 20) / (byId('wave').clientWidth - 21)));
   const point = points[Math.round(fraction * (points.length - 1))];
-  const seconds = heldWave?.history ?? (byId('trace').value === 'history');
+  const seconds = waveSource.history;
+  waveCursor = {history: seconds, point};
   write('cursor', `${point[0]} ${seconds ? 's' : 'ms'} · ${point[1].toFixed(3)} V / ${point[2].toFixed(3)} V`);
 };
 function openReplay(recording, index = 0) {
@@ -406,6 +522,47 @@ function openReplay(recording, index = 0) {
   byId('seek').value = index;
   byId('playback').disabled = false;
   render();
+}
+function openEvidence(recording, index, view, sensor = '', bus = '', failed = false) {
+  if (sensor && recording.frames[index].devices[sensor]) device = sensor;
+  if (view === 'network') {
+    const frame = recording.frames[index];
+    heldPackets = recording.transactions.filter(row => row.t_s === frame.t_s);
+    byId('hold-packets').setAttribute('aria-pressed', 'true');
+    byId('bus').value = bus || 'All';
+    byId('bus-result').value = failed ? 'failed' : 'all';
+    byId('bus-component').value = sensor;
+  }
+  if (view === 'power-lab') {
+    heldWave = undefined;
+    byId('trace').disabled = false;
+    byId('freeze-wave').setAttribute('aria-pressed', 'false');
+    byId('trace').value = 'history';
+    byId('timebase').value = '1';
+  }
+  openReplay(recording, index);
+  showWorkspace(view);
+  if (view === 'system-flow') byId('flow-mesh-button').click();
+}
+
+function showGuideEvidence({text, sensor = '', bus = '', failed = false}) {
+  if (!visibleFrame) return;
+  guideEvidence = {time: visibleFrame.t_s, replay, sensor, bus, failed};
+  write('guide-evidence-summary', text);
+  byId('guide-evidence').hidden = false;
+}
+
+for (const [id, view] of [['guide-packets', 'network'], ['guide-power', 'power-lab'], ['guide-replay', 'fault-center']]) {
+  byId(id).onclick = () => {
+    const evidence = guideEvidence;
+    if (!evidence) return;
+    action(async () => {
+      const recording = evidence.replay || await request('/api/lab/recording');
+      const index = recording.frames.findIndex(frame => frame.t_s === evidence.time);
+      if (index < 0) throw Error('That frame is no longer in the recording');
+      openEvidence(recording, index, view, evidence.sensor, evidence.bus, evidence.failed);
+    });
+  };
 }
 byId('replay').onclick = () => action(async () => openReplay(await request('/api/lab/recording')));
 byId('trace-reading').onclick = () => action(async () => {
@@ -426,6 +583,7 @@ byId('trace-reading').onclick = () => action(async () => {
     device = sensor;
     chipName = '';
     setMode('network');
+    showWorkspace('visual');
     openReplay(recording, trail.first);
   };
 });
@@ -464,4 +622,5 @@ async function poll() {
   await action(refresh);
   setTimeout(poll, 500);
 }
+showWorkspace(location.hash.slice(1));
 poll();

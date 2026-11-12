@@ -10,34 +10,98 @@
   <script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
   <script type="module" src="/lab.js"></script>
 </head>
-<body>
-<header><a class="brand" href="/">ORBIT<span class="accent">—</span>1</a><a href="/">Mission Control</a><span class="lab">SIMULATION ONLY</span></header>
+<body class="lab-workspace">
+<header class="workspace-header">
+  <a class="brand" href="/lab.html">ORBIT<span class="accent">—</span>1</a>
+  <span class="lab">Simulation only</span>
+  <a class="orbit-link" href="/">Orbital Mission Control <span aria-hidden="true">↗</span></a>
+</header>
 <main class="bench">
-  <div class="twin-title"><h1>Rocket electronics digital twin</h1><output id="graphics" aria-live="off">Starting WebGL</output></div>
-  <p>Look inside a virtual rocket and see how its battery, computers, and sensors work together. Everything here runs in simulation. The rocket’s shape and climb are illustrative. The orbit is calculated separately at 400 km above Earth.</p>
-  <details class="flight-guide panel" open>
-    <summary>New here? Start with the motion sensor</summary>
-    <ol>
-      <li><strong>Find it.</strong> Click <button id="beginner-sensor" disabled>Show the motion sensor</button>. This sensor tells the computer how the rocket’s motion is changing.</li>
-      <li><strong>Watch it work.</strong> Click <strong>Run / resume</strong>. The graph shows readings over time. Drag the 3D view to turn it, or scroll to zoom.</li>
-      <li><strong>See what breaks.</strong> Click <strong>Pause</strong>, then <strong>Inject</strong> and <strong>Step 250 ms</strong> (one quarter of a second). The sensor turns red because its message didn’t reach the computer.</li>
-      <li><strong>Fix it.</strong> Click <strong>Recover selected fault</strong> and step again. The sensor turns green when readings return. If the mission has ended, click <strong>Reset</strong> to try again.</li>
-    </ol>
-  </details>
+  <div class="twin-title">
+    <h1 id="workspace-title">3D Explorer</h1>
+    <div class="workspace-indicators">
+      <output id="host-health">Host · connecting</output>
+      <output id="firmware-health">Firmware · connecting</output>
+    </div>
+  </div>
   <nav class="lab-nav" aria-label="Laboratory views">
-    <a href="#vehicle-layout">Vehicle layout</a><a href="#visual">3D explorer</a><a href="#components">Sensor lab</a>
-    <a href="#network">Bus network</a><a href="#power-lab">Power and scope</a><a href="#test-bench">Test bench</a>
-    <a href="#fault-center">Faults and replay</a><a href="/#verification">Engineering status</a>
+    <button data-workspace-view="visual">3D Explorer</button>
+    <button data-workspace-view="system-flow">System Flow</button>
+    <button data-workspace-view="vehicle-layout">Vehicle</button>
+    <button data-workspace-view="components">Inspector</button>
+    <button data-workspace-view="sensor-reference">Sensors</button>
+    <button data-workspace-view="instrument-array">Instrument Array</button>
+    <button data-workspace-view="network">Bus</button>
+    <button data-workspace-view="power-lab">Power</button>
+    <button data-workspace-view="fault-center">Faults &amp; Replay</button>
+    <button data-workspace-view="test-bench">Test Bench</button>
+    <button data-workspace-view="investigation">Incident Investigator</button>
+    <button data-workspace-view="requirements">Engineering Status</button>
+    <button data-workspace-view="help">Help</button>
   </nav>
+  <label class="mobile-views">View <select id="workspace-select" aria-label="Laboratory view"></select></label>
+  <div class="mission-toolbar">
+    <div class="mission-state"><strong id="phase">Connecting</strong><output id="clock"></output><span id="mission-hint" role="status"></span></div>
+    <div class="controls">
+      <button data-command="start">Run / resume</button><button data-command="pause">Pause</button>
+      <button data-command="step">Step 250 ms</button><button data-command="reset">Reset</button>
+      <label>Speed <select id="speed"><option value="1">1×</option><option value="4">4×</option><option value="16">16×</option></select></label>
+    </div>
+  </div>
   <div class="guide-dock">
     <button id="guide-toggle" aria-controls="live-guide" aria-expanded="true">Hide live guide</button>
     <aside id="live-guide" aria-label="On-screen guide">
       <strong id="guide-title">Explore the electronics</strong>
       <p id="guide-message">Point at a sensor, graph, or control to see an explanation. Select a sensor to see its current reading.</p>
       <p id="guide-event" aria-live="polite"></p>
+      <div id="guide-evidence" class="controls" hidden>
+        <span id="guide-evidence-summary"></span>
+        <button id="guide-packets" type="button">Packets</button>
+        <button id="guide-power" type="button">Waveform</button>
+        <button id="guide-replay" type="button">Replay frame</button>
+      </div>
     </aside>
   </div>
   <div id="guide-marker" aria-hidden="true" hidden></div>
+  <p id="error" role="status"></p>
+  <div class="bench-grid" id="workspace-panes" data-view="visual">
+    <section class="panel" id="system-flow">
+      <h2>What happens in one simulation step</h2>
+      <p id="flow-time"></p>
+      <div class="controls" aria-label="System Flow display">
+        <button type="button" id="flow-summary-button" aria-pressed="true">Summary</button>
+        <button type="button" id="flow-mesh-button" aria-pressed="false">Flow Mesh</button>
+      </div>
+      <div id="flow-mesh" hidden>
+        <div class="controls">
+          <label>Trace <select id="mesh-mode"><option value="all">Overview</option><option value="sensor">Trace selected sensor</option><option value="fault">Trace fault</option></select></label>
+          <label>Signal group <select id="mesh-sensor"></select></label>
+          <button type="button" id="mesh-inventory">Open instrumentation inventory</button>
+        </div>
+        <p class="mesh-legend">Dashed blue = power · Cyan = recorded transfer · Red = failed path · Gray = idle
+          <span class="mesh-pan-hint">Swipe the graph sideways to follow the paths.</span>
+        </p>
+        <div class="mesh-viewport" tabindex="0" role="region" aria-label="Flow Mesh, scroll horizontally for more nodes"><svg id="mesh-graph" viewBox="0 0 980 355" role="group" aria-label="Simulation dependency graph"></svg></div>
+        <div id="mesh-detail"></div>
+      </div>
+      <div id="flow-summary">
+      <div id="flow-stages" class="flow-stages" aria-label="Simulation stages"></div>
+      <p id="flow-explanation"></p>
+      <p id="flow-affected"></p>
+      <div class="comparison-panes">
+        <article>
+          <h3>Bus activity in this frame</h3>
+          <div class="table-wrap"><table><thead><tr><th>Bus</th><th>Attempts</th><th>Failed</th><th>Modeled wire ms</th></tr></thead><tbody id="flow-buses"></tbody></table></div>
+        </article>
+        <article>
+          <h3>Compare two causes of a missing reading</h3>
+          <p>Interrupt a sensor’s data link, then try a drop in supply voltage. Use replay to see which stages change.</p>
+          <div class="controls"><button id="flow-sensor-test">Prepare sensor interruption</button><button id="flow-power-test">Prepare brownout</button></div>
+          <p id="flow-firmware"></p>
+        </article>
+      </div>
+      </div>
+    </section>
   <section class="panel vehicle-layout" id="vehicle-layout" aria-labelledby="layout-title">
     <div class="layout-heading">
       <div><h2 id="layout-title">Rocket equipment layout</h2>
@@ -54,14 +118,8 @@
     <p class="layout-key"><span>●</span> Working <span>●</span> Check reading <span>●</span> Failed <span>●</span> Off</p>
     <p id="layout-selection" role="status">Select a deck or component to begin.</p>
   </section>
-  <p id="error" role="status"></p>
   <section class="panel bench-controls" id="fault-center">
-    <div><strong id="phase">Connecting</strong> <output id="clock"></output></div>
-    <div class="controls">
-      <button data-command="start">Run / resume</button><button data-command="pause">Pause</button>
-      <button data-command="step">Step 250 ms</button><button data-command="reset">Reset</button>
-      <label>Speed <select id="speed"><option value="1">1×</option><option value="4">4×</option><option value="16">16×</option></select></label>
-    </div>
+    <h2>Faults and replay</h2>
     <div class="controls">
       <label>Fault <select id="fault"></select></label><button data-command="inject">Inject</button>
       <button data-command="recover">Recover selected fault</button><span id="active"></span>
@@ -73,32 +131,45 @@
       <button id="playback" disabled>Play recording</button>
       <label>Replay rate <select id="replay-rate"><option value="1">1×</option><option value="4">4×</option><option value="16">16×</option></select></label>
     </div>
+    <h3>Mission and fault history</h3><ol id="events"></ol>
   </section>
-  <div class="bench-grid">
-    <section class="panel twin-panel" id="visual"><h2>3D vehicle and mission</h2>
+    <section class="panel twin-panel" id="visual">
+      <div class="pane-heading"><h2>Vehicle cutaway</h2><output id="graphics" aria-live="off">Starting WebGL</output></div>
       <div class="controls view-controls">
-        <label>View <select id="twin-mode"><option value="vehicle">Rocket cutaway</option><option value="mission">Ground / flight reference</option><option value="avionics">Avionics bay</option><option value="pcb">Selected PCB</option><option value="network">Bus network</option><option value="orbit">Earth and orbit</option></select></label>
+        <label>View <select id="twin-mode"><option value="vehicle">Rocket cutaway</option><option value="exterior">Full exterior</option><option value="mission">Ground / flight reference</option><option value="avionics">Avionics bay</option><option value="pcb">Selected PCB</option><option value="network">Bus network</option><option value="orbit">Earth and orbit</option></select></label>
         <button id="camera-reset">Reset camera</button><button id="fullscreen">Full screen</button>
         <label>Graphics <select id="quality"><option value="auto">Adaptive</option><option value="low">Low</option></select></label>
       </div>
       <div class="controls view-controls">
         <label><input id="shell" type="checkbox" checked> Shell</label>
         <label><input id="labels" type="checkbox" checked> Labels</label>
-        <label>Opacity <input id="opacity" type="range" min="0" max="100" value="34"></label>
+        <label>Shell opacity <input id="opacity" type="range" min="0" max="100" value="100"></label>
         <label>Explode <input id="explode" type="range" min="0" max="100" value="0"></label>
       </div>
+      <details id="precision-tools">
+        <summary>Precision camera</summary>
+        <div class="controls view-controls">
+          <label>Projection <select id="projection"><option value="perspective">Perspective</option><option value="orthographic">Orthographic</option></select></label>
+          <button data-camera-view="front">Front</button><button data-camera-view="side">Side</button>
+          <button data-camera-view="top">Top</button><button data-camera-view="aft">Aft / thrusters</button><button data-camera-view="angled">Angled</button>
+          <button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button>
+          <label><input type="checkbox" id="reference-grid" checked> Reference grid</label>
+        </div>
+        <p>Orthographic views remove perspective distortion. Each grid square represents one model unit. Engine bells and thruster pods are visual models.</p>
+      </details>
       <canvas id="rocket" aria-label="Interactive 3D rocket. Select a board to inspect it."></canvas>
       <p class="bus-legend"><span>SPI</span><span>CAN</span><span>I²C</span><span>UART</span><span>Fault</span><span>DC supply</span></p>
-      <p class="harness-note">Gold lines show where electricity goes. Other colored lines show where messages travel. A <strong>bus</strong> is a shared path for messages. SPI, CAN, I²C, and UART are names for ways devices send them.</p>
       <p id="orbit-note">Orbital view becomes available at the orbit acquisition cue.</p>
       <canvas id="earth" aria-label="Interactive orbital reference view" hidden></canvas>
     </section>
     <section class="panel" id="components"><h2>Component inspector</h2>
-      <div class="supply">Battery → 5 V regulator → shared rail</div>
-      <div id="devices" class="devices" aria-label="Select a component"></div>
-      <h3 id="component-name">Select an electronic module</h3>
-      <p id="component-purpose" class="component-purpose"></p>
-      <pre id="device"></pre>
+      <label class="component-picker">Component <select id="component-select" aria-label="Select a component"></select></label>
+      <details id="component-directory"><summary>Browse all components</summary><div id="devices" class="devices" aria-label="Select a component"></div></details>
+      <div class="component-readout">
+        <h3 id="component-name">Select an electronic module</h3>
+        <p id="component-purpose" class="component-purpose"></p>
+        <pre id="device"></pre>
+      </div>
       <button id="trace-reading">Trace this reading</button>
       <div id="reading-trail" aria-live="polite" hidden>
         <ol id="reading-trail-steps"></ol>
@@ -115,23 +186,87 @@
       <canvas id="wave" aria-label="Model voltage waveform"></canvas>
       <p id="scale"></p><output id="cursor">Click the trace to read a sample</output><button id="csv">Export waveform CSV</button>
     </section>
-    <section class="panel"><h2>Sensor readings</h2>
-      <p>Channels update at 4 Hz when their power and bus are available.</p>
-      <pre id="sensors"></pre><h3>Mission and fault history</h3><ol id="events"></ol>
-    </section>
     <section class="panel wide" id="sensor-reference">
       <h2>Every modeled sensor and what it measures</h2>
       <p>These readings come from the selected simulation frame. Click a sensor name to inspect its 3D model.</p>
+      <label>Sensor group <select id="sensor-family">
+        <option value="all">All groups</option><option>Motion and position</option><option>Environment</option>
+        <option>Structure</option><option>Equipment temperatures</option><option>Power and payload</option><option>Communications</option><option>Signal quality</option>
+      </select></label>
       <div id="sensor-catalog" class="sensor-catalog"></div>
+      <details><summary>Compact readings</summary><pre id="sensors"></pre></details>
+    </section>
+    <section class="panel wide" id="instrument-array">
+      <h2>Distributed instrumentation</h2>
+      <p id="array-count" role="status">Loading the instrument inventory…</p>
+      <p>Distributed points interpolate between two modeled source readings. They follow live and replay frames and share the source sensors’ availability. They do not add separate hardware or bus packets.</p>
+      <div class="controls">
+        <label>Find a point <input id="array-search" type="search" placeholder="ID, type, or location"></label>
+        <label>Family <select id="array-family"><option value="all">All families</option></select></label>
+        <button id="array-export" disabled>Export this frame as CSV</button>
+      </div>
+      <div class="comparison-panes array-panes">
+        <article>
+          <h3 id="array-selection">Select a point</h3><p id="array-reading"></p><p id="array-source"></p>
+          <canvas id="array-plot" aria-label="Selected point over time"></canvas>
+        </article>
+        <article>
+          <div class="controls"><button id="array-prev">Previous</button><output id="array-page"></output><button id="array-next">Next</button></div>
+          <div class="table-wrap"><table><thead><tr><th>Point</th><th>Location</th><th>Reading</th></tr></thead><tbody id="array-rows"></tbody></table></div>
+        </article>
+      </div>
     </section>
     <section class="panel wide" id="network"><h2>Bus analyzer</h2>
-      <label>Protocol <select id="bus"><option>All</option><option>SPI</option><option>CAN</option><option>I²C</option><option>UART</option></select></label>
+      <div class="controls">
+        <label>Protocol <select id="bus"><option>All</option><option>SPI</option><option>CAN</option><option>I²C</option><option>UART</option></select></label>
+        <label>Result <select id="bus-result"><option value="all">All attempts</option><option value="failed">Failed only</option><option value="ok">Successful only</option></select></label>
+        <label>Component <input id="bus-component" type="search" placeholder="e.g. sensor_a"></label>
+      </div>
       <p>Each row is an attempted message. Start with <strong>Source</strong>, <strong>Destination</strong>, <strong>Decoded value</strong>, and <strong>Result</strong> to see who sent what and whether it arrived.</p>
       <details><summary>What do the other columns mean?</summary>
         <p>Payload is the message written as raw bytes. CRC is a check for changed bytes. Wire ms is the estimated transfer time in milliseconds. Rate bps is the number of bits the connection can send per second.</p>
       </details>
       <p id="bus-utilization"></p><button id="hold-packets" aria-pressed="false">Hold packet list</button>
+      <p id="bus-matches"></p>
       <div class="table-wrap"><table><thead><tr><th>Sim s</th><th>Bus</th><th>Source</th><th>Destination</th><th>Channel</th><th>Payload (hex)</th><th>CRC</th><th>Decoded value</th><th>Wire ms</th><th>Rate bps</th><th>Result</th></tr></thead><tbody id="messages"></tbody></table></div>
+    </section>
+    <section class="panel wide" id="investigation">
+      <h2>Investigate an avionics incident</h2>
+      <p>Inspect the evidence, choose a diagnosis, then reveal the injected fault. Evaluation mode assigns one case to each interface and records accuracy and elapsed time locally.</p>
+      <div class="controls">
+        <button id="incident-start">Start practice incident</button>
+        <button id="evaluation-start">Start two-case evaluation</button>
+        <button id="evaluation-export" disabled>Export evaluation</button>
+      </div>
+      <p id="incident-status" role="status"></p>
+      <div id="incident-case" hidden>
+        <h3 id="incident-symptom"></h3>
+        <div class="controls">
+          <label>Recorded frame <input id="incident-frame" type="range" min="0" max="360" value="0"></label>
+          <output id="incident-time"></output>
+          <button id="incident-first">First changed frame</button>
+        </div>
+        <div id="incident-observations"></div>
+        <div class="controls" id="incident-links">
+          <button data-incident-view="system-flow">Flow Mesh</button>
+          <button data-incident-view="network">Bus packets</button>
+          <button data-incident-view="power-lab">Power waveform</button>
+          <button data-incident-view="components">Sensor history</button>
+        </div>
+        <form id="incident-answer" class="controls">
+          <label>Diagnosis <select name="diagnosis" required></select></label>
+          <button type="submit">Submit diagnosis</button>
+        </form>
+        <p id="incident-result" role="status"></p>
+        <button id="evaluation-next" hidden>Next incident</button>
+      </div>
+    </section>
+    <section class="panel wide" id="requirements">
+      <h2>Requirements and verification evidence</h2>
+      <p>Each requirement links its pass criteria to recorded acceptance results and a view where you can inspect the behavior.</p>
+      <p id="requirements-status" role="status"></p>
+      <div class="table-wrap"><table><thead><tr><th>Requirement</th><th>Pass criteria</th><th>Last recorded result</th><th>Inspect</th></tr></thead><tbody id="requirements-rows"></tbody></table></div>
+      <button id="requirements-export" disabled>Export verification matrix</button>
     </section>
     <section class="panel wide" id="test-bench">
       <h2>Scenario test bench</h2>
@@ -147,6 +282,24 @@
         </select></label>
         <button type="submit">Run baseline and trial</button>
       </form>
+      <details id="campaign-panel">
+        <summary>Combined-fault campaigns</summary>
+        <p>Compare the first listed fault by itself with the full schedule. All runs use the same starting conditions and noise seed.</p>
+        <form id="campaign-form">
+          <div id="campaign-rows"></div>
+          <div class="controls"><button type="button" id="campaign-add">Add fault</button><button type="submit">Run campaign</button></div>
+        </form>
+        <p id="campaign-status" role="status"></p>
+        <div id="campaign-result" hidden>
+          <div class="table-wrap"><table><thead><tr><th>Metric</th><th>First fault only</th><th>Full schedule</th></tr></thead><tbody id="campaign-metrics"></tbody></table></div>
+          <div class="controls">
+            <label>Inspect at <input id="campaign-seek" type="range" min="0" max="360" value="100"></label><output id="campaign-time"></output>
+            <button id="campaign-comparison">Replay first fault</button><button id="campaign-trial">Replay full schedule</button>
+            <button id="campaign-export">Export campaign</button>
+          </div>
+          <canvas id="campaign-plot" aria-label="Controller availability for both campaign recordings"></canvas>
+        </div>
+      </details>
       <p id="scenario-status" role="status"></p>
       <div id="scenario-result" hidden>
         <ol id="scenario-checks"></ol>
@@ -165,6 +318,18 @@
       <h3>Firmware-in-the-loop evidence</h3>
       <p>This separate QEMU test sends two synthetic samples over UART and checks how Zephyr reports the gap.</p>
       <button id="firmware-bench-load">Load firmware test report</button><pre id="firmware-bench-report" aria-live="polite"></pre>
+    </section>
+    <section class="panel" id="help">
+      <h2>Getting started</h2>
+      <p>This is a virtual rocket. Its shape and climb are illustrative, and its 400 km orbit is calculated separately.</p>
+      <ol>
+        <li>Click <button id="beginner-sensor" disabled>Show the motion sensor</button> to see the board and its readings.</li>
+        <li>Press <strong>Run / resume</strong> or <strong>Step 250 ms</strong> in the toolbar. Drag the 3D view to turn it and scroll to zoom.</li>
+        <li>Open <strong>Faults &amp; Replay</strong>. While paused, select <strong>Primary sensor interruption</strong>, click <strong>Inject</strong>, and step once.</li>
+        <li>Open <strong>Inspector</strong> and choose <strong>Trace this reading</strong> to see why the reading went missing. Recover the fault and step to restore the reading.</li>
+      </ol>
+      <p>Gold lines carry electricity. The colored bus lines carry messages between devices.</p>
+      <a href="/#verification">Open engineering verification results</a>
     </section>
   </div>
 </main>

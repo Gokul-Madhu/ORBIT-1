@@ -74,6 +74,12 @@ def main():
                 duplicate = subprocess.run([sys.executable, '-m', 'orbit1.launcher', '--port', '8781', '--no-qemu'],
                                            cwd=ROOT, capture_output=True, text=True, timeout=5)
                 assert duplicate.returncode != 0 and 'already running' in duplicate.stderr
+                shared_build = subprocess.run(
+                    [sys.executable, '-m', 'orbit1.launcher', '--port', '8783',
+                     '--build-dir', 'zephyr/build-validation', '--skip-build'],
+                    cwd=ROOT, capture_output=True, text=True, timeout=5,
+                )
+                assert shared_build.returncode != 0 and 'Choose a separate --build-dir' in shared_build.stderr
                 processes = subprocess.check_output(['ps', '-eo', 'pid=,pgid=,args='], text=True)
                 managed = []
                 for line in processes.splitlines():
@@ -93,7 +99,7 @@ def main():
                     raise AssertionError('Lifecycle HTTP server survived shutdown')
                 sessions = list(runtime.glob('session-*.json'))
                 assert sessions and any(json.loads(p.read_text()).get('schema')=='orbit1-session-v1' for p in sessions)
-                check('Managed application lifecycle', 'Real launcher connected its own QEMU; duplicate rejected; SIGTERM stopped HTTP and owned QEMU; recording saved')
+                check('Managed application lifecycle', 'Real launcher connected its own QEMU; duplicate port and shared build directory rejected; SIGTERM stopped HTTP and owned QEMU; recording saved')
             finally:
                 if child is not None and child.poll() is None:
                     child.send_signal(signal.SIGTERM)

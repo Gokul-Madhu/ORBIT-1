@@ -29,36 +29,83 @@ def satisfies(frame, sensor, outcome):
     return frame['rail_v'] >= 4.7
 
 
+def fault_window(config):
+    if not isinstance(config, dict) or not isinstance(config.get('fault'), str) or config['fault'] not in FAULTS:
+        raise ValueError('Select a supported fault')
+    injection = config.get('inject_s')
+    recovery = config.get('recover_s')
+    for name, value in (('Injection', injection), ('Recovery', recovery)):
+        if type(value) not in (int, float) or not 0.25 <= value <= 90 or value * 4 % 1:
+            raise ValueError(f'{name} time must be a quarter-second step between 0.25 and 90 seconds')
+    if injection >= recovery:
+        raise ValueError('Recovery must come after injection')
+    return int(injection * 4), int(recovery * 4)
+
+
+def record_schedule(schedule):
+    lab = ElectronicsLab()
+    for tick in range(1, 361):
+        for fault, start, end in schedule:
+            if tick == start:
+                lab.command('inject', fault)
+            elif tick == end:
+                lab.command('recover', fault)
+        lab.step()
+    return lab.snapshot(recording=True)
+
+
+def run_campaign(config):
+    schedule = config.get('schedule') if isinstance(config, dict) else None
+    if not isinstance(schedule, list) or not 2 <= len(schedule) <= 4:
+        raise ValueError('Schedule two to four distinct faults')
+    windows = []
+    for item in schedule:
+        start, end = fault_window(item)
+        windows.append((item['fault'], start, end))
+    if len({fault for fault, _, _ in windows}) != len(windows):
+        raise ValueError('Schedule each fault at most once')
+    start = min(item[1] for item in windows)
+    end = max(item[2] for item in windows)
+    baseline = record_schedule([])
+    comparison = record_schedule(windows[:1])
+    trial = record_schedule(windows)
+
+    def summarize(recording):
+        frames = recording['frames']
+        expected = baseline['frames']
+        def unavailable(index):
+            return sum(measurement(expected[index], sensor) is not None
+                       and measurement(frames[index], sensor) is None for sensor in SENSOR_SPECS)
+        def restored(index):
+            return frames[index]['controller'] == expected[index]['controller'] and unavailable(index) == 0
+        restored_at = next((index for index in range(end, len(frames)) if restored(index)), None)
+        return {
+            'no_controller_s': sum(frame['controller'] == 'none' for frame in frames[start:end]) / 4,
+            'missing_samples': sum(unavailable(index) for index in range(start, end)),
+            'restored_at_s': None if restored_at is None else restored_at / 4,
+            'recovery_delay_s': None if restored_at is None else (restored_at - end) / 4,
+        }
+    return {'schema': 'orbit1-campaign-v1', 'seed': 42, 'schedule': schedule,
+            'window_s': [start / 4, end / 4],
+            'metrics': {'comparison': summarize(comparison), 'trial': summarize(trial)},
+            'comparison': comparison, 'trial': trial}
+
+
 def run_scenario(config):
     if not isinstance(config, dict):
         raise ValueError('Scenario must be an object')
     fault = config.get('fault')
     sensor = config.get('sensor')
     outcome = config.get('expect')
-    injection = config.get('inject_s')
-    recovery = config.get('recover_s')
     if not isinstance(fault, str) or fault not in FAULTS:
         raise ValueError('Select a supported fault')
     if not isinstance(sensor, str) or sensor not in SENSOR_SPECS:
         raise ValueError('Select a modeled sensor')
     if outcome not in OUTCOMES:
         raise ValueError('Select a supported expectation')
-    for name, value in (('Injection', injection), ('Recovery', recovery)):
-        if type(value) not in (int, float) or not 0.25 <= value <= 90 or value * 4 % 1:
-            raise ValueError(f'{name} time must be a quarter-second step between 0.25 and 90 seconds')
-    if injection >= recovery:
-        raise ValueError('Recovery must come after injection')
-    baseline, trial = ElectronicsLab(), ElectronicsLab()
-    injection_tick, recovery_tick = int(injection * 4), int(recovery * 4)
-    for tick in range(1, 361):
-        if tick == injection_tick:
-            trial.command('inject', fault)
-        elif tick == recovery_tick:
-            trial.command('recover', fault)
-        baseline.step()
-        trial.step()
-    reference = baseline.snapshot(recording=True)
-    experiment = trial.snapshot(recording=True)
+    injection_tick, recovery_tick = fault_window(config)
+    reference = record_schedule([])
+    experiment = record_schedule([(fault, injection_tick, recovery_tick)])
     failed_tick = next((i for i in range(injection_tick, recovery_tick)
                         if not satisfies(experiment['frames'][i], sensor, outcome)), None)
     recovery_frame = experiment['frames'][recovery_tick]

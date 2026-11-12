@@ -7,6 +7,7 @@ import time
 from binascii import crc_hqx
 
 from .engine import Orbit
+from .instruments import DIAGNOSTICS, INSTRUMENTS, auxiliary_readings, comparison_readings
 
 
 PHASES = (
@@ -35,8 +36,15 @@ DEVICES = {
     'payload': ('I²C', 0.25), 'pressure': ('SPI', 0.025),
     'checkout_load': ('—', 0.08),
     'gyro': ('SPI', 0.020), 'gnss': ('CAN', 0.035),
+    'strain_upper': ('I²C', .006), 'strain_lower': ('I²C', .006),
+    'vibration_upper': ('CAN', .009), 'vibration_lower': ('CAN', .009),
+    'skin_upper': ('I²C', .004), 'skin_lower': ('I²C', .004),
+    'sound_upper': ('SPI', .005), 'sound_lower': ('SPI', .005),
+    'heat_upper': ('I²C', .004), 'heat_lower': ('I²C', .004),
+    'payload_switch': ('I²C', .003), 'payload_supply': ('I²C', .008),
 }
 BIT_RATES = {'SPI': 1_000_000, 'CAN': 250_000, 'I²C': 100_000, 'UART': 115_200}
+DEVICES.update({name: spec[4:] for name, spec in (INSTRUMENTS | DIAGNOSTICS).items()})
 SENSOR_SPECS = {
     'sensor_a': ('Primary accelerometer / IMU', 'm/s²', '±16 per axis', 'Seeded noise σ = 0.004 on X; thermal bias scenario'),
     'sensor_b': ('Redundant accelerometer', 'm/s²', '±16 per axis', 'Ideal backup bench channel; disagreement scenario offsets X'),
@@ -45,7 +53,42 @@ SENSOR_SPECS = {
     'temperature': ('Board temperature sensor', '°C', '−40 to 125 display range', 'Lumped regulator losses and ambient cooling'),
     'pressure': ('Pressure transducer', 'kPa', '0.2–101.3', 'Scripted chamber profile independent of physical altitude'),
     'monitor': ('Power monitor', 'V / A', '0–9 V / 0–2 A display range', 'Direct model taps for battery, rail, and supply current'),
+    'strain_upper': ('Upper shell strain gauge', 'µε', '0–300 display range', 'Illustrative deformation at the payload-side shell'),
+    'strain_lower': ('Lower frame strain gauge', 'µε', '0–300 display range', 'Illustrative deformation at the lower equipment frame'),
+    'vibration_upper': ('Upper deck vibration sensor', 'm/s² RMS', '0–8 display range', 'Synthetic vibration envelope at the communications deck'),
+    'vibration_lower': ('Lower deck vibration sensor', 'm/s² RMS', '0–8 display range', 'Synthetic vibration envelope at the lower frame'),
+    'skin_upper': ('Upper skin temperature probe', '°C', '0–75 display range', 'Illustrative thermal response near the upper shell'),
+    'skin_lower': ('Lower skin temperature probe', '°C', '0–75 display range', 'Illustrative thermal response near the lower shell'),
+    'sound_upper': ('Upper bay microphone', 'dB rel.', '0–100 display range', 'Synthetic relative sound level, not calibrated sound pressure'),
+    'sound_lower': ('Lower bay microphone', 'dB rel.', '0–100 display range', 'Synthetic relative sound level, not calibrated sound pressure'),
+    'heat_upper': ('Upper heat-flow gauge', 'W/m²', '0–200 display range', 'Prescribed inward heat-flux signal, not a heating prediction'),
+    'heat_lower': ('Lower heat-flow gauge', 'W/m²', '0–200 display range', 'Prescribed inward heat-flux signal, not a heating prediction'),
+    'payload_switch': ('Payload position switch', 'state', '0 or 1', 'Reports the scripted payload milestone when payload health permits'),
+    'payload_supply': ('Payload branch power monitor', 'V / A', '0–5 V / 0–0.25 A', 'Reads modeled supply voltage and nominal branch current'),
 }
+SENSOR_SPECS.update({name: spec[:4] for name, spec in (INSTRUMENTS | DIAGNOSTICS).items()})
+
+
+def distributed_readings(t):
+    """Prescribed instrumentation exercise; values do not represent flight loads."""
+    elapsed = max(0.0, t - 20)
+    event = (1 - exp(-elapsed / 2)) * exp(-elapsed / 9)
+    if t >= 50:
+        event = 0.0
+    cue = max(0.0, 1 - abs(t - 35) / 1.5)
+    heat = (1 - exp(-elapsed / 8)) * exp(-elapsed / 26)
+    return {
+        'strain_upper': 12 + 95 * event + 25 * cue,
+        'strain_lower': 24 + 185 * event + 60 * cue,
+        'vibration_upper': .08 + 1.5 * event + .7 * cue,
+        'vibration_lower': .13 + 4.2 * event + 1.6 * cue,
+        'skin_upper': 22 + 39 * heat,
+        'skin_lower': 23 + 23 * heat,
+        'sound_upper': 23 + 33 * event + 12 * cue,
+        'sound_lower': 28 + 58 * event + 20 * cue,
+        'heat_upper': 5 + 155 * event,
+        'heat_lower': 4 + 90 * event,
+    }
 
 
 class ElectronicsLab:
@@ -68,7 +111,9 @@ class ElectronicsLab:
         self.faults = set()
         self.frames = deque(maxlen=361)
         self.events = deque(maxlen=150)
-        self.transactions = deque(maxlen=8192)
+        # Enough for every tick of a full run, including vector and diagnostic messages.
+        self.transactions = deque(maxlen=361 * 95)
+        self.last_motion_sample = {}
         self.waveform = []
         self.rng = random.Random(42)
         self.orbit = Orbit()
@@ -133,7 +178,8 @@ class ElectronicsLab:
             rail *= 0.7
         battery_current = rail * current / (efficiency * terminal)
         self.soc = max(0, self.soc - battery_current * 0.25 / 7200)
-        losses = rail * current * (1 / efficiency - 1) + 0.35 * battery_current**2
+        conversion_loss = rail * current * (1 / efficiency - 1)
+        losses = conversion_loss + 0.35 * battery_current**2
         self.temperature += 0.25 * (losses * 0.6 - (self.temperature - 22) / 60)
         powered = rail >= 4.7
         watchdog = 'watchdog' in fault and powered
@@ -168,6 +214,14 @@ class ElectronicsLab:
                 round(self.temperature, 2), 'timeout' if 'i2c' in fault or 'temperature' in fault else None)
             channels['pressure'] = self.exchange('SPI', 'pressure', controller,
                 round(chamber_kpa, 2), 'integrity error' if 'spi' in fault else None)
+            instrumentation = distributed_readings(t) | auxiliary_readings(t, self.temperature, losses)
+            instrumentation.update(pressure_upper=chamber_kpa + .15, pressure_lower=chamber_kpa + .55)
+            for name, value in instrumentation.items():
+                bus = DEVICES[name][0]
+                issue = 'timeout' if bus == 'I²C' and 'i2c' in fault else (
+                    'link unavailable' if bus == 'CAN' and 'can' in fault else
+                    'integrity error' if bus == 'SPI' and 'spi' in fault else None)
+                channels[name] = self.exchange(bus, name, controller, round(value, 3), issue)
             for name, bus, issue in (
                 ('sensor_a', 'SPI', 'timeout' if 'imu' in fault else 'integrity error' if 'spi' in fault else None),
                 ('sensor_b', 'CAN', 'link unavailable' if 'can' in fault else None),
@@ -196,6 +250,15 @@ class ElectronicsLab:
             if controller != 'none':
                 self.exchange('I²C', 'payload', controller, float(payload == 'OPERATING'),
                               'timeout' if 'i2c' in fault else None)
+        if powered and controller != 'none':
+            issue = 'timeout' if 'i2c' in fault else None
+            channels['payload_switch'] = self.exchange(
+                'I²C', 'payload_switch', controller, float(payload == 'OPERATING'), issue)
+            active = t >= 55
+            branch = [rail if active else 0, DEVICES['payload'][1] if active else 0]
+            values = [self.exchange('I²C', 'payload_supply', controller, value, issue, field)
+                      for field, value in zip(('voltage', 'current'), branch)]
+            vectors['payload_supply'] = values if not issue else None
         if self.pending_radio is not None:
             if 'radio' in fault:
                 self.dropped += 1
@@ -205,6 +268,39 @@ class ElectronicsLab:
         if powered and controller != 'none':
             self.pending_radio = self.exchange('UART', controller, 'radio', rail,
                                                'frame lost' if 'uart' in fault else None)
+            used_ms = dict.fromkeys(BIT_RATES, 0.0)
+            failed_attempts = dict.fromkeys(BIT_RATES, 0)
+            for row in reversed(self.transactions):
+                if row['t_s'] != t:
+                    break
+                used_ms[row['bus']] += row['wire_ms']
+                failed_attempts[row['bus']] += row['result'] != 'ok'
+            diagnostics = {
+                'supply_main': rail, 'supply_backup': rail,
+                'current_main': DEVICES['primary'][1], 'current_backup': DEVICES['backup'][1],
+                'loss_regulator': conversion_loss,
+                'usage_spi': used_ms['SPI'] / 2.5, 'usage_can': used_ms['CAN'] / 2.5,
+                'usage_i2c': used_ms['I²C'] / 2.5, 'usage_uart': used_ms['UART'] / 2.5,
+                'link_received': self.received, 'link_dropped': self.dropped,
+                'link_pending': int(self.pending_radio is not None),
+                'rail_margin': rail - 4.7, 'battery_sag': ocv - terminal,
+                'battery_loss': 0.35 * battery_current**2, 'load_power': rail * current,
+                'rail_adc': max(0, min(1023, round(rail / 5 * 1023))),
+                'battery_charge': self.soc * 100,
+                'errors_spi': failed_attempts['SPI'], 'errors_can': failed_attempts['CAN'],
+                'errors_i2c': failed_attempts['I²C'], 'errors_uart': failed_attempts['UART'],
+            }
+            for source, diagnostic in (('sensor_a', 'age_motion_a'), ('sensor_b', 'age_motion_b')):
+                if vectors.get(source) is not None:
+                    self.last_motion_sample[source] = t
+                if source in self.last_motion_sample:
+                    diagnostics[diagnostic] = t - self.last_motion_sample[source]
+            diagnostics.update(comparison_readings(channels, vectors))
+            for name, value in diagnostics.items():
+                bus = DEVICES[name][0]
+                issue = 'timeout' if bus == 'I²C' and 'i2c' in fault else (
+                    'integrity error' if bus == 'SPI' and 'spi' in fault else None)
+                channels[name] = self.exchange(bus, name, controller, round(value, 4), issue)
         if t == 90:
             self.running = False
         previous_rail = self.frames[-1]['rail_v'] if self.frames else 0.0
@@ -287,9 +383,10 @@ class ElectronicsLab:
             'available_faults': FAULTS, 'active_faults': sorted(self.faults),
             'trajectory': self.trajectory,
             'sensor_specs': SENSOR_SPECS,
-            'transactions': list(self.transactions) if recording else list(self.transactions)[-32:],
+            'transactions': list(self.transactions) if recording else list(self.transactions)[-190:],
             'events': list(self.events)[-(150 if recording else 20):],
             'frames': list(self.frames) if recording else [
-                {k: f[k] for k in ('t_s', 'rail_v', 'battery_v', 'battery_a', 'load_w', 'sensors', 'vectors')}
+                {k: f[k] for k in ('t_s', 'rail_v', 'battery_v', 'battery_a', 'load_w', 'sensors', 'vectors',
+                                   'radio_received', 'radio_dropped')}
                 for f in self.frames],
         }

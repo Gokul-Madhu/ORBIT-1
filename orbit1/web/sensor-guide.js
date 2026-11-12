@@ -1,3 +1,5 @@
+import {EXTRA_INSTRUMENTS, sensorFamily} from './instrument-layout.js';
+
 const CHANNELS = {
   sensor_a: [['X', 'm/s²', 'Acceleration along the first sensor axis. Noise and the thermal fault can change this reading.'],
     ['Y', 'm/s²', 'Acceleration along the second sensor axis.'],
@@ -10,6 +12,19 @@ const CHANNELS = {
     ['Z', 'rad/s', 'Turning rate about the third axis.']],
   pressure: [['Pressure', 'kPa', 'How strongly the simulated chamber gas pushes. Lower pressure means less push.']],
   temperature: [['Temperature', '°C', 'How warm the electronics are in the power model.']],
+  strain_upper: [['Strain', 'µε', 'Stretch per million parts at the upper shell. Compare it with the lower frame at the same time.']],
+  strain_lower: [['Strain', 'µε', 'Stretch per million parts at the lower frame. This location has a stronger response to the scripted disturbance.']],
+  vibration_upper: [['Vibration', 'm/s² RMS', 'Average shaking intensity at the upper equipment deck.']],
+  vibration_lower: [['Vibration', 'm/s² RMS', 'Average shaking intensity at the lower equipment deck. Compare it with the upper deck during the same event.']],
+  skin_upper: [['Surface temperature', '°C', 'Simulated temperature of the upper outer shell. It changes more slowly than the vibration signal.']],
+  skin_lower: [['Surface temperature', '°C', 'Simulated temperature of the lower outer shell. This location has a different heating response.']],
+  sound_upper: [['Sound level', 'dB rel.', 'Relative sound level in the upper bay. The values have a simulation reference.']],
+  sound_lower: [['Sound level', 'dB rel.', 'Relative sound level near the lower deck. Compare it with the upper bay at the same time.']],
+  heat_upper: [['Heat flow', 'W/m²', 'Synthetic rate of heat entering each square metre of the upper surface.']],
+  heat_lower: [['Heat flow', 'W/m²', 'Synthetic rate of heat entering each square metre of the lower surface.']],
+  payload_switch: [['Position', 'state', '0 means the deployment indication is open. 1 means the payload has reached its operating milestone.']],
+  payload_supply: [['Voltage', 'V', 'Electrical supply at the payload branch. The branch is off before payload initialization.'],
+    ['Current', 'A', 'Nominal current drawn by the modeled payload branch while enabled.']],
   gnss: [['X', 'km', 'First coordinate of the calculated orbit position relative to Earth’s center.'],
     ['Y', 'km', 'Second coordinate in the same Earth-centered frame.'],
     ['Z', 'km', 'Third coordinate in the same Earth-centered frame.']],
@@ -30,7 +45,7 @@ const HINTS = [
   ['#firmware', 'See real firmware messages', 'This status comes from Zephyr running in QEMU. It uses its own clock, separate from the virtual rocket sensors.'],
 ];
 
-export function createSensorGuide(select) {
+export function createSensorGuide(select, explain) {
   const catalog = document.getElementById('sensor-catalog');
   const title = document.getElementById('guide-title');
   const message = document.getElementById('guide-message');
@@ -39,6 +54,12 @@ export function createSensorGuide(select) {
   const marker = document.getElementById('guide-marker');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const cards = new Map();
+  const filter = document.getElementById('sensor-family');
+  filter.onchange = () => {
+    for (const [name, card] of cards) {
+      card.section.hidden = filter.value !== 'all' && sensorFamily(name) !== filter.value;
+    }
+  };
   let current;
   let selection;
   let hovered;
@@ -101,6 +122,14 @@ export function createSensorGuide(select) {
     const item = target.closest('[data-equipment], [data-component], [data-sensor-help]');
     const sensor = item?.dataset.equipment || item?.dataset.component || item?.dataset.sensorHelp;
     const hint = HINTS.find(([selector]) => target.closest(selector));
+    if (sensor && current?.specs[sensor]) {
+      const card = cards.get(sensor);
+      const packet = card?.packet;
+      explain({
+        text: `${current.specs[sensor][0]} at ${current.frame.t_s.toFixed(2)} s · ${current.frame.rail_v.toFixed(2)} V rail.`,
+        sensor, bus: packet?.bus, failed: packet?.t_s === current.frame.t_s && packet.result !== 'ok',
+      });
+    }
     hovered = CHANNELS[sensor] ? {sensor} : hint ? {hint} : undefined;
     marker.hidden = panel.hidden || !hovered || reducedMotion.matches;
     show();
@@ -126,6 +155,9 @@ export function createSensorGuide(select) {
       current = {frame, specs};
       selection = selected;
       for (const [name, spec] of Object.entries(specs)) {
+        if (EXTRA_INSTRUMENTS[name] && !CHANNELS[name]) {
+          CHANNELS[name] = [['Reading', spec[1], EXTRA_INSTRUMENTS[name][5]]];
+        }
         if (!CHANNELS[name]) continue;
         let card = cards.get(name);
         if (!card) {

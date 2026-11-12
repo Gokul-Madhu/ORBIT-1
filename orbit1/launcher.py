@@ -2,6 +2,7 @@
 import argparse
 from datetime import datetime, timezone
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,9 +19,10 @@ def main():
     parser.add_argument('--no-qemu', action='store_true', help='Host simulation only; QEMU stays disconnected')
     parser.add_argument('--open-browser', action='store_true', help='Open the workbench in Windows after startup')
     parser.add_argument('--skip-build', action='store_true', help='Use existing mission build')
-    parser.add_argument('--build-dir', default='zephyr/build-mission', help='Isolated project-local Zephyr build directory')
+    parser.add_argument('--build-dir', help='Project-local Zephyr build directory (defaults to one per port)')
     args = parser.parse_args()
-    build_dir = (ROOT/args.build_dir).resolve()
+    default_build = 'zephyr/build-mission' if args.port == 8780 else f'zephyr/build-mission-{args.port}'
+    build_dir = (ROOT/(args.build_dir or default_build)).resolve()
     if not build_dir.is_relative_to((ROOT/'zephyr').resolve()) or not build_dir.name.startswith('build'):
         parser.error('Build directory must be zephyr/build* inside this project')
     runtime = ROOT / '.runtime'
@@ -34,13 +36,21 @@ def main():
     lock.truncate()
     lock.write(str(os.getpid()))
     lock.flush()
+    build_lock = None
+    if not args.no_qemu:
+        build_key = hashlib.sha256(os.fsencode(build_dir)).hexdigest()
+        build_lock = (runtime/f'build-{build_key}.lock').open('a')
+        try:
+            fcntl.flock(build_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            parser.exit(1, f'Another ORBIT-1 instance is using {build_dir}. Choose a separate --build-dir.\n')
     mission = Mission(run_tests=True)
     server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(mission))
     server.timeout = .25
     stop = threading.Event()
     process = None
     reader = None
-    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
 
     def shutdown(*_):
         stop.set()
@@ -56,12 +66,13 @@ def main():
                 qemu_binary = Path(os.environ.get('QEMU_BIN_PATH', '/usr/bin'))/'qemu-system-i386'
                 if not qemu_binary.is_file():
                     raise RuntimeError(f'QEMU executable not found: {qemu_binary}')
-                with (runtime/'build.log').open('w') as output:
+                build_log = runtime/('build.log' if args.port == 8780 else f'build-{args.port}.log')
+                with build_log.open('w') as output:
                     build = subprocess.run(['west', 'build', '-b', 'qemu_x86/atom', '-d', str(build_dir),
                                             str(ROOT/'zephyr'), '--', f'-DQEMU={qemu_binary}'], cwd=ROOT, stdout=output,
                                            stderr=subprocess.STDOUT, timeout=240)
                 if build.returncode:
-                    raise RuntimeError('Firmware build failed; see .runtime/build.log')
+                    raise RuntimeError(f'Firmware build failed; see {build_log}')
             if not (build_dir/'zephyr'/'zephyr.elf').is_file():
                 raise RuntimeError('Firmware artifact missing; run without --skip-build')
             process = subprocess.Popen(['west', 'build', '-d', str(build_dir), '-t', 'run'],
@@ -100,6 +111,8 @@ def main():
             process.stdout.close()
         mission.close()
         (runtime/f'session-{stamp}.json').write_text(json.dumps(mission.session()), encoding='utf-8')
+        if build_lock is not None:
+            build_lock.close()
         lock.close()
         print('ORBIT-1 stopped; recording saved.', flush=True)
 

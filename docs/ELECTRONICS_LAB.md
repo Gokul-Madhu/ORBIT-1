@@ -27,6 +27,58 @@ shows that its sample is unavailable. Switch to **Bus network** to see the
 failed SPI route. **Fault Focus** returns the camera to the failed board.
 Press **Recover selected fault**, then step again to restore valid readings.
 
+## Follow a reading through the system
+
+Open **System Flow → Flow Mesh** and choose **Overview** to see the shared
+rail, input groups, buses, computers, and ground link. Dashed blue paths show
+power dependencies. Cyan pulses represent recorded transfers or ground
+deliveries. Red paths show failed transfers, ground drops, or failed power
+branches.
+
+Click an input group and choose a signal to see its value, units, health, and
+attempts for the current frame. Choose **Trace fault** to emphasize affected
+paths. The same controls work in live mode and replay. To inspect the individual
+packets, open **Bus** and filter by protocol, result, or component name.
+The list shows up to 24 matching attempts, with the newest first.
+
+## Incident investigation and reliability experiments
+
+Open **Incident Investigator** and start a practice case. A motion reading
+disappears during the recording. Use the slider and **First changed frame**
+to compare the rail, controller, and bus activity with the healthy reference.
+Follow the links into the mesh, packet list, waveform, or sensor history.
+Select a path in Flow Mesh to see its frame-specific evidence in the on-screen
+guide. **Packets** opens the attempts from that frame and **Waveform** opens
+the voltage history ending at that frame. Submit a diagnosis to reveal the
+injected cause.
+
+**Start two-case evaluation** presents both cases in randomized order. One
+uses standard readouts, and the other adds evidence links and Flow Mesh.
+The timer starts when each case is ready and stops at submission. Export
+the two results as local JSON with the assigned interface, diagnosis,
+correctness, and elapsed seconds. For a participant study, record each
+participant's export separately and compare accuracy and elapsed time by
+interface across participants. Because each participant receives a different
+case in each interface, retain the case identifier in any analysis. The
+application records no participant identity and does not upload responses.
+
+In **Test Bench**, expand **Combined-fault campaigns** to schedule two to
+four distinct faults at quarter-second intervals. The first row runs alone
+in the comparison and every row runs in the trial. The healthy reference
+defines which signal samples would otherwise be available. Both fault runs
+report controller downtime, missing samples, and the first frame after the
+final scheduled clearance at which controller and sample availability
+match the reference. The defaults make the backup unavailable two seconds
+after the primary watchdog fault. The overlap leaves the full trial without
+a controller for three seconds. Use the slider to open either recording at
+the same time, or export both recordings and metrics as JSON.
+
+**Engineering Status** maps five avionics requirements to their pass criteria,
+saved acceptance evidence, and inspection views. Results from a different
+source checksum appear as **Stale**. After a campaign or investigation,
+the corresponding rows can open the current recording. The matrix exports
+as JSON alongside the evidence timestamps.
+
 ## Model and data flow
 
 The laboratory has a 250 ms fixed simulation step and a deterministic noise
@@ -73,7 +125,7 @@ The lab endpoint shares the server's mission lock and worker. Its clock is
 separate from the original orbital sandbox. `GET /api/lab` returns live state
 and bounded summaries, `GET /api/lab/recording` returns the recorded run, and
 `POST /api/lab` accepts lab controls. A run holds at most 361 snapshots,
-8,192 transactions, and 150 events. Live polling retrieves 32 recent
+34,295 transactions, and 150 events. Live polling retrieves 190 recent
 transactions. JSON export captures the full current in-memory recording.
 
 ## Verification and remaining fidelity
@@ -133,6 +185,19 @@ dependencies. QEMU status remains independent of the host model.
 
 Extended operation, physical GPU performance and hardware validation have
 not been established. All modeled dimensions are illustrative.
+
+## 300-point instrumentation array
+
+Open **Instrument Array** to search by ID, location, or family and export
+the current frame as CSV. The inventory contains 37 existing sensor and
+monitor groups and 263 distributed points. The 34 calculated diagnostics
+remain in the Sensors view and are excluded from the array total.
+
+Each distributed point uses its recorded pair of source readings and its
+station weight: `value = first + weight × (second − first)`. Live and replay
+use the same rule. A point is unavailable if either input is unavailable.
+This gives each location a traceable simulated reading while retaining the
+original independent device count and bus traffic.
 
 ## Next integration milestones
 
