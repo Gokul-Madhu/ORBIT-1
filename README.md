@@ -43,6 +43,34 @@ The default launch starts paused. Press **Run** or Space to advance the referenc
 - **Replay:** scrub and play the rolling recording, export it as JSON, and import a saved session. Replay uses recorded states and telemetry; live operation continues separately. Live model controls are disabled while reviewing a replay. Reset or reconfiguration clears the current model recording.
 - **Verification:** view actual Python test output, rerun tests without blocking telemetry, inspect repository milestones, and inspect saved acceptance evidence. Evidence is marked STALE when source contents change.
 
+## Dashboard screenshots
+
+These captures show ORBIT-1 running in simulation.
+
+### Orbital Mission Control
+
+Calculated spacecraft motion, orbital plots, ground track, and a separate live Zephyr/QEMU telemetry panel.
+
+![Orbital Mission Control with a 3D Earth, telemetry charts, ground track, and QEMU status](docs/screenshots/mission-control.png)
+
+### 3D rocket explorer
+
+The cutaway exposes the avionics boards and sensors alongside the component inspector.
+
+![Rocket cutaway with labeled internal electronics and a component inspector](docs/screenshots/rocket-cutaway.png)
+
+### Flow Mesh fault tracing
+
+A simulated brownout drops the shared rail to 3.50 V. Red paths show the affected power branches.
+
+![Flow Mesh showing failed power branches and zero bus attempts during a brownout](docs/screenshots/flow-mesh-brownout.png)
+
+### Engineering Status
+
+The verification matrix shows the pass criteria, recorded results, and inspection views for five avionics requirements.
+
+![Engineering Status dashboard showing five passing avionics requirements](docs/screenshots/engineering-status.png)
+
 ## Architecture
 
 ```text
