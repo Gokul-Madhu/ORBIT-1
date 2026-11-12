@@ -9,6 +9,12 @@ normal operation against a fault and reproduce the separate Zephyr UART test.
 
 A complete **local, simulation-only** orbital laboratory: Python Kepler mechanics, an interactive WebGL Earth, recorded mission replay, and synthetic Zephyr RTOS telemetry from QEMU. There are no physical measurements, vehicle commands, actuators, propulsion, launch sequences, or flight-control outputs.
 
+
+
+https://github.com/user-attachments/assets/f3a9ff35-65ac-46bb-a964-2a7a3439eae8
+
+
+
 ## Start the application
 
 From this folder in Windows PowerShell:
